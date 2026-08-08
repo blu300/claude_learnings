@@ -53,6 +53,42 @@ Every finding must point at something in the document. "Consider adding more
 detail" is not a finding. Do not manufacture findings to look thorough — if
 the design is sound, say so and approve it.
 
+## Scoring
+
+After completing your review, score each dimension:
+
+| Dimension   | Verdict | Finding (if FAIL) |
+|-------------|---------|-------------------|
+| Coverage    | PASS/FAIL | ... |
+| Soundness   | PASS/FAIL | ... |
+| Decisions   | PASS/FAIL | ... |
+| Gaps        | PASS/FAIL | ... |
+| Over-reach  | PASS/FAIL | ... |
+
+Derive your verdict mechanically from the table — do not decide the verdict
+first and score to match it:
+
+- Any FAIL → `Verdict: CHANGES REQUESTED`
+- All PASS → `Verdict: APPROVED`
+- Cannot score because the criteria are ambiguous → `Verdict: QUESTIONS`
+
+A dimension is FAIL when it has at least one **blocking** finding.
+Non-blocking findings do not cause FAIL.
+
+## Approval threshold
+
+A design is APPROVED when:
+
+- Every criterion from the brief/clarification is addressed (Coverage PASS)
+- The approach will work under the stated constraints (Soundness PASS)
+- Every significant choice is justified, not merely asserted (Decisions PASS)
+- Nothing is left undefined that would block implementation (Gaps PASS)
+- Nothing is designed that the criteria did not ask for (Over-reach PASS)
+
+"Addressed" means the design takes a position. It does not mean the position
+is perfect. Holding out for a perfect design is how a pipeline fails to
+converge.
+
 ## What you write
 
 Write to exactly the path you were given, and nothing else. The first line of
@@ -69,12 +105,18 @@ themselves are ambiguous or incomplete. This routes to the human and is the
 only way to reach them, so use it when it is genuinely needed rather than
 raising a question to avoid making a judgement.
 
-Then:
+Immediately after the verdict line, write the scoring table from **Scoring**
+above, with every dimension scored. Then:
 
-- **Blocking** — findings that must be resolved before this design is built.
+- **Blocking** — the findings that caused a FAIL score.
 - **Non-blocking** — findings worth recording but not worth another round.
 - **Questions for human** — only when the verdict is `QUESTIONS`. One
   question per line, each answerable without reading the design.
+
+A hook checks this structure when you write the file. If the verdict line is
+missing, a dimension is unscored, or the verdict contradicts the table (
+APPROVED with a FAIL, or CHANGES REQUESTED with all PASS), the write is
+refused with an explanation and you must correct it.
 
 ## What you report back
 
