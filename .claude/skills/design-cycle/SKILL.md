@@ -3,7 +3,17 @@ name: design-cycle
 description: Runs the clarify, design, review and backlog pipeline. Takes a brief, questions it, loops design and review until the review is clean, then produces a backlog.
 argument-hint: [path-to-brief]
 disable-model-invocation: true
-allowed-tools: Bash(python3 scripts/iteration.py *) Read Edit
+allowed-tools: Bash(python3 scripts/iteration.py *) Bash(echo *) Read Edit
+hooks:
+  PreToolUse:
+    - matcher: "Write|Edit"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/guard_orchestrator_write.py"'
+    - matcher: "Agent"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/warn_paste_in_prompt.py"'
 ---
 
 # Design cycle
@@ -40,9 +50,17 @@ Brief: $ARGUMENTS
 ### Clarify
 
 1. Create the first iteration folder:
-   `python3 scripts/iteration.py next` — it prints the folder path, e.g. `docs/1`.
-   Call this folder `<dir>`, and remember `<dir>/clarification.md` as the
-   clarification path for the whole run.
+   `python3 scripts/iteration.py next --max 4` — it prints the folder path,
+   e.g. `docs/1`. The `--max 4` gate makes the iteration cap a hard stop the
+   orchestrator cannot override: once four folders exist, the command exits
+   non-zero instead of creating a fifth. Call this folder `<dir>`, and
+   remember `<dir>/clarification.md` as the clarification path for the whole
+   run.
+
+   Before each delegation, record which iteration is active so the write
+   guards can scope their checks: `echo <n> > docs/.current_iteration`
+   (where `<n>` is the current folder number). Do this every time you set or
+   change `<dir>`.
 
 2. Delegate to the `clarifier` agent. Give it the brief path and tell it to
    write `<dir>/clarification.md`.
@@ -81,8 +99,10 @@ Brief: $ARGUMENTS
      the next folder, set `<dir>` to it, and go to step 5.
 
    - **`Verdict: CHANGES REQUESTED`** — create the next folder with
-     `python3 scripts/iteration.py next`, set `<dir>` to it, and go back to
-     step 5, passing the previous iteration's `review.md` path.
+     `python3 scripts/iteration.py next --max 4`, set `<dir>` to it, and go
+     back to step 5, passing the previous iteration's `review.md` path. If the
+     command exits non-zero, the cap is reached: stop and report the design
+     did not converge within four iterations.
 
    - **`Verdict: APPROVED`** — go to step 8.
 

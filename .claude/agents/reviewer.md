@@ -11,6 +11,11 @@ hooks:
       hooks:
         - type: command
           command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/guard_output_path.py" review.md'
+  PostToolUse:
+    - matcher: "Write"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/validate_review_format.py"'
 ---
 
 You review a design document. You never edit the design, and you never write

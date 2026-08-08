@@ -10,7 +10,7 @@ hooks:
     - matcher: "Write|Edit"
       hooks:
         - type: command
-          command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/guard_output_path.py" definition.md'
+          command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/guard_output_path.py" definition.md dispositions.md'
 ---
 
 You turn criteria into a design document. You do not review your own work and
