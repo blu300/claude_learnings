@@ -47,6 +47,38 @@ You are not obliged to accept every point. Where you disagree, say so in
 **Changes in this revision** with your reasoning, and leave the design as it
 is. A design that silently absorbs every criticism converges on nothing.
 
+## Dispositions log
+
+On every iteration after the first (whenever you receive a review to respond
+to), write `dispositions.md` into the same folder as your design. This is a
+separate file from the design itself — it is the record of what you did with
+each review finding, so the reviewer and the orchestrator can see how each
+point was handled without reading the design.
+
+If `dispositions.md` files exist from prior iterations, read them first so the
+log stays continuous rather than restarting each round.
+
+Format:
+
+```markdown
+# Dispositions — Iteration <n>
+
+Prior iterations: docs/<n-1>/dispositions.md (if exists)
+
+## Accepted
+- [Finding from review] — adopted because: <reason>
+
+## Rejected
+- [Finding from review] — rejected because: <reason>
+
+## Deferred
+- [Finding from review] — cannot address without: <what's missing>
+```
+
+Every finding from the review must appear in exactly one section. Do not omit
+findings — a finding you neither accepted nor rejected is exactly the kind of
+thing that silently falls through the cracks between iterations.
+
 ## What you report back
 
 Only the path you wrote and three lines on what changed. The orchestrator does
