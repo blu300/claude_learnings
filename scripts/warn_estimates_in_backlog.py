@@ -3,12 +3,26 @@
 
 A PostToolUse hook on the backlog-writer's Write calls. The pipeline forbids
 time/effort estimates in the backlog (they invite false precision), but this
-is a heuristic — the word "effort" could appear innocently — so like the paste
-hook it only warns and always exits 0.
+is a heuristic — the word "effort" could appear innocently — so this hook only
+warns.
 
-Being a PostToolUse hook, it runs *after* the write has already landed, so it
-cannot prevent the estimate being written; it can only flag it for a human to
-notice. That is the right trade-off for a heuristic rule.
+WHY PostToolUse
+---------------
+It reads the file's *content*, which does not exist until the write has
+happened. No PreToolUse hook can inspect a file that has not been written yet.
+PostToolUse cannot block ("Can block? No — Shows stderr to Claude; the tool
+already ran"), which is fine here: flagging a heuristic is all we want.
+
+HOW THE WARNING REACHES SOMEONE
+-------------------------------
+Not via stderr — stderr from a hook that exits 0 goes to the debug log only
+and Claude never sees it. Warnings travel as JSON on stdout:
+
+    systemMessage                        -> shown to the USER
+    hookSpecificOutput.additionalContext -> given to CLAUDE next to the tool
+                                            result, so it can fix the file
+
+See https://code.claude.com/docs/en/hooks for both fields.
 """
 
 import json
@@ -41,12 +55,21 @@ def main() -> int:
             findings.extend(matches)
 
     if findings:
-        print(
-            f"Warning: backlog appears to contain effort estimates "
-            f"(found: {', '.join(str(f) for f in findings[:5])}). "
-            f"The spec says not to estimate.",
-            file=sys.stderr,
-        )
+        sample = ", ".join(str(f) for f in findings[:5])
+        print(json.dumps({
+            "systemMessage": (
+                f"Warning: backlog appears to contain effort estimates "
+                f"(found: {sample})."
+            ),
+            "hookSpecificOutput": {
+                "hookEventName": "PostToolUse",
+                "additionalContext": (
+                    f"The backlog you just wrote appears to contain effort "
+                    f"estimates (found: {sample}). The spec says not to "
+                    f"estimate — you have no basis for them. Remove them."
+                ),
+            },
+        }))
 
     return 0
 

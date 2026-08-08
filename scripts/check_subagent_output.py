@@ -13,10 +13,29 @@ Two things make this different from the guard_*.py scripts:
    check is therefore coarse: did the agent leave *anything* in the current
    iteration folder? (See "What this does not catch" below.)
 
-2. It reports back with JSON on stdout instead of exit code 2. Returning
-   {"decision": "block", "reason": "..."} tells the orchestrator the
-   subagent stopped without producing output and passes a message back,
-   which is richer than a bare non-zero exit.
+2. It replies with JSON on stdout instead of exit code 2.
+
+WHAT "block" MEANS HERE — IT DOES NOT MEAN STOP
+-----------------------------------------------
+On SubagentStop, {"decision": "block", "reason": "..."} does the opposite of
+what the word suggests. Per the hooks reference, SubagentStop exit 2 / block
+"Prevents the subagent from stopping" — it *keeps the subagent running* and
+hands it the reason as its next instruction.
+
+    https://code.claude.com/docs/en/hooks
+
+Two consequences for how this script is written:
+
+  - The reason is addressed to the SUBAGENT, not to the orchestrator. It is
+    an instruction to the agent that just tried to finish ("write your output
+    file now"), not a report to its parent.
+  - To reach the PARENT session after a subagent returns, you would use a
+    PostToolUse hook on the Agent tool instead. That is a different channel
+    and this hook is not it.
+
+In practice keep-going-and-fix-it is better than stop here: the agent gets a
+chance to write the file it forgot. But it is not what SKILL.md's prose rule
+("report the failure and stop") describes, and the difference matters.
 """
 
 import json
@@ -56,14 +75,16 @@ def main() -> int:
     if wrote_something:
         return 0
 
-    # The agent finished but left the iteration folder empty. Block the stop
-    # and tell the orchestrator why, using JSON rather than an exit code.
+    # The agent finished but left the iteration folder empty. Keep it running
+    # and instruct it to write its file. The reason goes to the SUBAGENT, so
+    # it is phrased as an instruction to that agent — not as a report to the
+    # orchestrator, which never sees this.
     print(json.dumps({
         "decision": "block",
         "reason": (
-            f"A delegated agent finished but wrote no .md file in {folder}. "
-            f"Re-run the agent or report the failure and stop, as the "
-            f"pipeline rules require."
+            f"You finished without writing any .md file in {folder}. Write "
+            f"your output file to that folder now, at exactly the path you "
+            f"were given. If you cannot, say why in your final message."
         ),
     }))
     return 0

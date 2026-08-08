@@ -2,11 +2,25 @@
 """Validate that review.md has the correct structured format.
 
 A PostToolUse hook on the reviewer's Write calls. Unlike the warn-only hooks,
-the review format is a *structural* rule, so this hard-blocks (exit 2) and
-tells the reviewer exactly what to fix. Hard-blocking a PostToolUse means the
-agent is prompted to rewrite the file until it validates.
+the review format is a *structural* rule, so this exits 2 and tells the
+reviewer exactly what to fix.
 
-Blocks if:
+WHAT EXIT 2 DOES ON PostToolUse — IT DOES NOT PREVENT THE WRITE
+--------------------------------------------------------------
+PostToolUse cannot block. Per the hooks reference's per-event table:
+
+    PostToolUse | Can block? No | Shows stderr to Claude; the tool already ran
+    -- https://code.claude.com/docs/en/hooks
+
+So a malformed review.md IS written to disk and stays there. Exit 2 shows this
+script's stderr to the reviewer, which makes it correct the file on a
+subsequent write. Anything reading review.md between the two writes sees the
+malformed version.
+
+That is the strongest guarantee available at this event, and it is weaker than
+the PreToolUse guards, which stop the write from happening at all.
+
+Rejects if:
 - First line is not a valid verdict
 - Scoring table is missing or incomplete
 - Verdict contradicts scoring (APPROVED with FAILs, or CHANGES REQUESTED with

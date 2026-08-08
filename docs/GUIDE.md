@@ -4,8 +4,9 @@ This is a guide to how this repository works, written to teach the mechanisms
 rather than just document the code. It covers **subagents**, **skills**,
 **hooks**, and **the state that passes between them**.
 
-The system is deliberately small: four agents, one skill, six scripts. Nothing
-here needs to be more complicated than it is.
+The system is deliberately small: four agents, one skill, six hook scripts and
+one folder-management script. Nothing here needs to be more complicated than it
+is.
 
 ---
 
@@ -139,10 +140,28 @@ hooks: ...
 
 Things worth noticing:
 
-- **`allowed-tools` is scoped to specific commands.** Not "Bash" but
-  `Bash(python3 scripts/iteration.py *)`. The orchestrator can run the
-  iteration script and `echo`, and nothing else. Again: restriction by
-  capability, not by instruction.
+- **`allowed-tools` is a permission *grant*, not a restriction.** This one
+  catches people out, including the first version of this guide. It lists
+  tools Claude may use *without a permission prompt* during the turn that
+  invoked the skill — it does not remove anything from the pool, and every
+  other tool remains callable under your normal permission settings. Writing
+  `Bash(python3 scripts/iteration.py *)` means "don't prompt me for that
+  command", not "only that command is allowed".
+
+  The field that actually restricts is **`disallowed-tools`**, which removes
+  tools from the pool while the skill is active.
+
+  > *"Tools Claude can use without asking permission during the turn that
+  > invokes this skill. The grant clears when you send your next message."*
+  > — [skills reference](https://code.claude.com/docs/en/skills)
+
+  **And note that expiry**, because this pipeline runs headfirst into it. The
+  grant clears on the user's next message, but the orchestrator is a
+  multi-turn relay — it asks the human the clarifier's questions and waits.
+  On the turn after the human answers, the grant is gone and
+  `Bash(python3 scripts/iteration.py *)` prompts normally. Skill *content*
+  persists for the session; skill *permissions* last one turn. Those are two
+  different lifetimes and it is worth knowing which is which.
 - **`disable-model-invocation: true`** means it only runs when a human asks
   for it — it won't fire on its own.
 - **`$ARGUMENTS`** in the body receives the brief path.
@@ -184,17 +203,32 @@ the rule and nobody notices. The spec calls this **silent degradation**.
 A hook is a **shell command the harness runs around a tool call**. It is code,
 not persuasion. It cannot be talked out of its opinion.
 
-### The two events used here
+### The three events used here
 
 | Event | Fires | Can it block? |
 |---|---|---|
 | **PreToolUse** | *before* a tool call executes | **Yes** — the call never happens |
-| **PostToolUse** | *after* the tool call completed | The write already landed; it can reject the *result* and demand a fix |
-| **SubagentStop** | when a delegated subagent finishes | Not tool-scoped at all — agent-scoped |
+| **PostToolUse** | *after* the tool call completed | **No** — the tool already ran. It shows stderr to Claude, which makes it fix the result |
+| **SubagentStop** | when a delegated subagent finishes | **Yes** — but "block" here prevents the subagent *stopping*, i.e. it keeps running |
 
-The Pre/Post distinction matters. To stop a file being written at all, you need
-**PreToolUse**. To judge the *content* of a file, you need **PostToolUse** —
-because the content doesn't exist until the write has happened.
+Three things follow, and each one bites:
+
+**To prevent a write, you need PreToolUse.** Nothing later can un-write a file.
+
+**To judge a file's *content*, you need PostToolUse** — the content doesn't
+exist until the write has happened. But PostToolUse **cannot block**: the file
+lands on disk and stays there. The best it can do is tell Claude to fix it on a
+subsequent write, and anything reading the file in between sees the bad version.
+
+**"Block" does not mean the same thing at every event.** At PreToolUse it stops
+the call. At SubagentStop it does the reverse of what the word suggests — it
+stops the agent from *finishing*, so the agent keeps going. Read the per-event
+table in the [hooks reference](https://code.claude.com/docs/en/hooks) rather
+than assuming exit 2 has one universal meaning.
+
+`SubagentStop` is also the odd one out for matching: it isn't tool-scoped, but
+it does support matchers — they filter on **agent type** (`general-purpose`,
+`Explore`, or a custom agent's frontmatter `name`) rather than on tool name.
 
 ### How a hook is declared
 
@@ -214,6 +248,14 @@ hooks:
 - Arguments after the script name are ordinary CLI args — that's how one
   generic guard serves four agents with different allowed filenames.
 
+**One thing that will silently defeat all of this: workspace trust.** Hooks
+declared in a *project's* agent or skill frontmatter only run once the
+workspace trust dialog has been accepted for the folder that file came from.
+Clone this repo, decline the dialog (or never see it), and every guard here
+fails to fire with no error and no explanation — the pipeline just runs
+unguarded. If you are testing hooks and nothing happens at all, check trust
+before you debug the script.
+
 ### How a hook communicates
 
 The harness pipes the tool call to the script as **JSON on stdin**, and reads
@@ -231,23 +273,49 @@ return 2                                 # exit code = the decision
 
 | Code | Meaning |
 |---|---|
-| `0` | Allow. (stderr is still shown — this is how warn-only hooks work.) |
-| `2` | **Block.** stderr is fed back to the agent so it can correct itself. |
+| `0` | Allow. **stderr goes to the debug log only — nobody sees it.** |
+| `2` | The blocking signal. What it blocks depends on the event (see above). stderr *is* fed back to the agent. |
 
-**Or structured JSON on stdout** — a richer channel than an exit code:
+That first row is the trap, and this guide fell into it. Printing a warning to
+stderr and exiting 0 does nothing at all:
+
+> *"Stderr from a hook that exits 0 goes to the debug log only, never the
+> transcript, and Claude never sees it."*
+> — [hooks reference](https://code.claude.com/docs/en/hooks)
+
+Both warn-only hooks in this repo were originally written that way and were
+therefore **completely inert**. They looked correct, they were unit-tested, and
+they did nothing in a real session.
+
+**To say something without blocking, use JSON on stdout.** Two fields, two
+different audiences:
 
 ```python
-print(json.dumps({"decision": "block", "reason": "..."}))
+print(json.dumps({
+    "systemMessage": "Warning: ...",              # -> the USER sees this
+    "hookSpecificOutput": {
+        "hookEventName": "PreToolUse",
+        "additionalContext": "...",               # -> CLAUDE sees this
+    },
+}))
 ```
 
-`check_subagent_output.py` uses this form. Same outcome, but it passes a
-message rather than just a status.
+| You want to reach | Use |
+|---|---|
+| The **user** | `systemMessage`, exit 0 — action proceeds |
+| **Claude**, non-blocking | `hookSpecificOutput.additionalContext`, exit 0 |
+| **Claude**, from PostToolUse | exit 2 — the tool already ran, so this warns rather than blocks |
+| Block a call outright | `decision: "block"` with a `reason`, or exit 2 at a blockable event |
+
+Note the third row collapses the tidy "2 means block" story: at PostToolUse the
+docs actively recommend exit 2 *as the way to warn*, because there is nothing
+left to block. Exit 2's meaning is per-event, not universal.
 
 ### The load-bearing distinction: hard-block vs warn-only
 
 This is the design principle that keeps the system usable:
 
-> **Structural rules hard-block (exit 2). Heuristic rules warn only (exit 0).**
+> **Structural rules block. Heuristic rules warn and let the action through.**
 
 A *structural* rule is a fact: the path either is or isn't
 `docs/2/review.md`. No judgement, no false positives — safe to block.
@@ -264,7 +332,7 @@ everything, defeating the purpose.*
 
 ---
 
-## 5. The six scripts
+## 5. The seven scripts
 
 All are stdlib-only Python, all under ~90 lines.
 
@@ -321,10 +389,18 @@ Reads the backlog after it's written and flags time/effort estimates
 (`3 days`, `5 points`, "estimate", "sizing"). PostToolUse is *required* here —
 you cannot inspect a file's content before it exists.
 
-### `validate_review_format.py` — PostToolUse, **hard-block**
+### `validate_review_format.py` — PostToolUse, rejects the result
 
-The one PostToolUse hook that blocks, because review structure is structural,
-not heuristic. It rejects a `review.md` that:
+Review structure is structural, not heuristic, so this one exits 2 rather than
+warning. But note what that can and cannot do here: **PostToolUse cannot block**
+— the malformed `review.md` is written to disk and stays there. Exit 2 shows the
+error to the reviewer, which makes it rewrite the file. Anything reading
+`review.md` between the two writes sees the bad version.
+
+That is the strongest guarantee available at this event, and it is weaker than
+the PreToolUse guards, which stop the write happening at all.
+
+It rejects a `review.md` that:
 
 - doesn't start with a valid `Verdict:` line,
 - is missing any of the five scored dimensions,
@@ -337,9 +413,29 @@ just scored as failing.
 
 ### `check_subagent_output.py` — SubagentStop, JSON output
 
-Mechanises *"if an agent fails to write its file, report the failure and
-stop."* When any subagent finishes, it checks the current iteration folder
-contains at least one `.md` file.
+When any subagent finishes, it checks the current iteration folder contains at
+least one `.md` file.
+
+**It does not do what SKILL.md's prose rule says**, and the gap is instructive.
+The rule is *"if an agent fails to write its file, report the failure and
+stop."* What `{"decision": "block", "reason": ...}` actually does at
+SubagentStop is:
+
+> *"Returning `decision: "block"` … prevents the subagent from stopping"*
+> — [hooks reference](https://code.claude.com/docs/en/hooks)
+
+So it **keeps the agent running** and hands it the `reason` as its next
+instruction — close to the opposite of "stop". And the `reason` goes to the
+**subagent**, not to the orchestrator, so it must be phrased as an instruction
+to the agent that just tried to finish ("write your output file now"), not as
+a report to its parent. To inject context into the *parent* session after a
+subagent returns, you would use a PostToolUse hook on the `Agent` tool instead
+— a different channel entirely.
+
+In practice keep-going-and-fix-it is the better behaviour here: the agent gets
+a chance to write the file it forgot. But it is not what the prose says, and
+writing the `reason` for the wrong reader is an easy mistake — this repo made
+it first time round.
 
 **It is deliberately coarse, and that's a lesson in itself.** SubagentStop
 receives no `file_path` — it isn't tied to a tool call — so it *cannot* know
@@ -507,22 +603,53 @@ do.
 
 ## 10. The transferable lessons
 
-1. **Restrict by capability, not instruction.** `tools:` and `allowed-tools:`
-   stop things prompts only discourage.
-2. **PreToolUse blocks; PostToolUse judges results.** Pick by whether you need
+1. **Restrict subagents with `tools:`.** It is a hard allowlist — the agent
+   cannot call anything else, whatever its prompt says. This is the bluntest
+   and most reliable control in the system.
+2. **`allowed-tools:` on a skill is the opposite of a restriction** — it
+   pre-approves tools so they don't prompt, and expires on the next user
+   message. `disallowed-tools:` is the one that removes tools. Do not confuse
+   a permission grant with a sandbox.
+3. **PreToolUse blocks; PostToolUse judges results.** Pick by whether you need
    to prevent the action or inspect its output.
-3. **Hard-block facts, warn on guesses.** A heuristic that blocks will
+4. **Hard-block facts, warn on guesses.** A heuristic that blocks will
    eventually halt something important for no reason.
-4. **Exit 2 to block, exit 0 to allow; stderr talks to the agent.** Or emit
-   JSON for a richer reply.
-5. **Files are how state survives an agent boundary.** No shared memory.
-6. **Isolation is a setting, not a constraint** — resume the designer for
+5. **Exit 0 stderr is invisible.** It reaches the debug log and nothing else.
+   To warn without blocking, emit JSON on stdout: `systemMessage` for the
+   user, `hookSpecificOutput.additionalContext` for Claude.
+6. **Exit 2's meaning is per-event.** It blocks at PreToolUse, merely warns at
+   PostToolUse (the tool already ran), and at SubagentStop it stops the agent
+   *finishing* — which keeps it running. Check the per-event table rather than
+   assuming.
+7. **Files are how state survives an agent boundary.** No shared memory.
+8. **Isolation is a setting, not a constraint** — resume the designer for
    continuity, spawn the reviewer fresh for independence.
-7. **If the coordinator can't read it, it can't verify it** — which is exactly
+9. **If the coordinator can't read it, it can't verify it** — which is exactly
    when you need a hook.
-8. **Pair prompts with enforcement.** A format instruction plus a hook that
+10. **Pair prompts with enforcement.** A format instruction plus a hook that
    validates it is far stronger than either alone.
-9. **Prefer honest coarseness to fake precision.** The SubagentStop hook checks
+11. **Prefer honest coarseness to fake precision.** The SubagentStop hook checks
    what it actually can, and documents what it can't.
-10. **Write down what you didn't fix.** Undocumented gaps get mistaken for
+12. **Write down what you didn't fix.** Undocumented gaps get mistaken for
     guarantees.
+13. **Verify the layer you are making claims about.** Every test in this repo
+    exercises *the scripts*. None of them exercise *the harness contract* —
+    what Claude Code does with an exit code, where stderr goes, what
+    `allowed-tools` grants. Four wrong claims in the first version of this
+    guide lived in exactly that gap, and a fully green test suite could not
+    see any of them. Green tests measure the thing you tested, not the thing
+    you asserted.
+
+---
+
+## A note on sourcing
+
+Every behavioural claim about Claude Code in this guide links to the reference
+doc it comes from. That convention exists because the first version of this
+guide got four of them wrong — `allowed-tools`, exit-0 stderr, PostToolUse
+blocking, and SubagentStop `block` semantics — and nothing in the test suite
+could catch a documentation error. A citation lets you check a claim without
+running anything, and lets a future editor re-check it against a newer doc.
+
+Behaviour observed in a live session beats these docs, and these docs beat this
+guide. If you find a disagreement, that order is the tiebreak.

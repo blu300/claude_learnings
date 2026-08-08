@@ -45,8 +45,11 @@ Hardening a four-agent design-cycle pipeline (clarifier → designer → reviewe
 - The backlog sizing heuristic is deliberately spelled out ("one to three
   working days") rather than written with digits, so it cannot trip
   `warn_estimates_in_backlog.py`.
-- Nothing has been run end-to-end against a real brief yet. The scripts are
-  unit-tested; the pipeline itself has not been exercised live.
+- The pipeline HAS been exercised against a real brief — see `docs/1/`–`docs/4/`
+  — but it was driven manually, step by step, rather than by invoking the
+  skill. So the skill-level hooks never fired automatically, and no hook has
+  been observed blocking a live agent mid-run. `docs/VERIFY.md` sets out
+  exactly what that run does and does not prove.
 
 ## Testing pattern
 

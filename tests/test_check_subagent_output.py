@@ -37,6 +37,9 @@ def test_blocks_when_folder_is_empty(tmp_path):
     payload = json.loads(result.stdout)
     assert payload["decision"] == "block"
     assert "docs/2" in payload["reason"] or "docs\\2" in payload["reason"]
+    # The reason is delivered to the SUBAGENT, so it must be phrased as an
+    # instruction to that agent rather than a report to the orchestrator.
+    assert "You finished" in payload["reason"]
 
 
 def test_allows_when_no_marker(tmp_path):

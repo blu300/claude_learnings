@@ -52,7 +52,8 @@ def run_hook(script, payload, cwd=None, args=()):
     return proc
 
 
-def case(label, script, payload, expect_exit, *, cwd=None, args=(), expect_stdout_json=False):
+def case(label, script, payload, expect_exit, *, cwd=None, args=(),
+         expect_stdout_json=False, expect_warning=None):
     proc = run_hook(script, payload, cwd=cwd, args=args)
     ok = proc.returncode == expect_exit
     if expect_stdout_json:
@@ -60,6 +61,20 @@ def case(label, script, payload, expect_exit, *, cwd=None, args=(), expect_stdou
             ok = ok and json.loads(proc.stdout).get("decision") == "block"
         except (json.JSONDecodeError, ValueError):
             ok = False
+    if expect_warning is not None:
+        # Warn-only hooks speak via JSON on stdout. Stderr from a hook that
+        # exits 0 goes to the debug log only and Claude never sees it, so
+        # asserting on stderr here would pass while the hook was inert.
+        try:
+            payload_out = json.loads(proc.stdout) if proc.stdout.strip() else None
+        except (json.JSONDecodeError, ValueError):
+            payload_out = None
+        got_warning = bool(payload_out and payload_out.get("systemMessage"))
+        ok = ok and (got_warning == expect_warning)
+        if expect_warning and got_warning:
+            ok = ok and bool(
+                payload_out.get("hookSpecificOutput", {}).get("additionalContext")
+            )
 
     verdict = f"{GREEN}PASS{RESET}" if ok else f"{RED}FAIL{RESET}"
     results.append(ok)
@@ -138,16 +153,20 @@ shutil.rmtree(scope, ignore_errors=True)
 
 banner(
     "3. warn_paste_in_prompt.py",
-    "PreToolUse on Agent (delegation, not writes). HEURISTIC rule -> warns on\n"
-    "stderr but ALWAYS exits 0, so a false positive cannot halt the pipeline.",
+    "PreToolUse on Agent (delegation, not writes). HEURISTIC rule -> warns but\n"
+    "ALWAYS exits 0, so a false positive cannot halt the pipeline.\n"
+    "Warns via JSON on stdout: systemMessage (to the user) +\n"
+    "additionalContext (to Claude). Stderr on exit 0 would be invisible.",
 )
 
 case("silent on a proper paths-only delegation", "warn_paste_in_prompt.py",
-     {"tool_input": {"prompt": "Read docs/1/definition.md and write docs/1/review.md"}}, 0)
+     {"tool_input": {"prompt": "Read docs/1/definition.md and write docs/1/review.md"}}, 0,
+     expect_warning=False)
 case("warns on a very long prompt (still exit 0)", "warn_paste_in_prompt.py",
-     {"tool_input": {"prompt": "x" * 2100}}, 0)
+     {"tool_input": {"prompt": "x" * 2100}}, 0, expect_warning=True)
 case("warns on pasted markdown + code (still exit 0)", "warn_paste_in_prompt.py",
-     {"tool_input": {"prompt": "Review this:\n# A\ntext\n## B\ntext\n### C\n```py\nx=1\n```"}}, 0)
+     {"tool_input": {"prompt": "Review this:\n# A\ntext\n## B\ntext\n### C\n```py\nx=1\n```"}}, 0,
+     expect_warning=True)
 
 # ---------------------------------------------------------------------------
 # 4. warn_estimates_in_backlog.py — PostToolUse, WARN ONLY
@@ -156,7 +175,8 @@ case("warns on pasted markdown + code (still exit 0)", "warn_paste_in_prompt.py"
 banner(
     "4. warn_estimates_in_backlog.py",
     "PostToolUse on Write. Must be Post: it reads the file's CONTENT, which\n"
-    "does not exist until the write has happened. Heuristic -> warn only.",
+    "does not exist until the write has happened. Heuristic -> warn only,\n"
+    "via JSON on stdout (systemMessage + additionalContext).",
 )
 
 tmp = Path(tempfile.mkdtemp())
@@ -166,9 +186,9 @@ dirty = tmp / "dirty.md"
 dirty.write_text("# Backlog\n\n### Story 1.1\nEstimate: 3 days\n5 points\n")
 
 case("silent on a clean backlog", "warn_estimates_in_backlog.py",
-     {"tool_input": {"file_path": str(clean)}}, 0)
+     {"tool_input": {"file_path": str(clean)}}, 0, expect_warning=False)
 case("warns on time units and story points (still exit 0)", "warn_estimates_in_backlog.py",
-     {"tool_input": {"file_path": str(dirty)}}, 0)
+     {"tool_input": {"file_path": str(dirty)}}, 0, expect_warning=True)
 
 shutil.rmtree(tmp, ignore_errors=True)
 
@@ -178,8 +198,9 @@ shutil.rmtree(tmp, ignore_errors=True)
 
 banner(
     "5. validate_review_format.py",
-    "PostToolUse on Write, and the only Post hook that BLOCKS -- review\n"
-    "structure is structural, not heuristic. Catches self-contradiction.",
+    "PostToolUse on Write. PostToolUse CANNOT block -- the file is already on\n"
+    "disk. Exit 2 shows stderr to the reviewer so it rewrites the file. The\n"
+    "malformed version existed in between. Catches self-contradiction.",
 )
 
 tmp = Path(tempfile.mkdtemp())
@@ -229,14 +250,15 @@ shutil.rmtree(tmp, ignore_errors=True)
 banner(
     "6. check_subagent_output.py",
     "SubagentStop -- fires when a delegated AGENT finishes, not around a tool\n"
-    "call. Gets no file_path, so the check is deliberately coarse. Replies with\n"
-    "JSON on stdout instead of an exit code.",
+    "call. Gets no file_path, so the check is deliberately coarse.\n"
+    "decision:'block' does NOT stop the agent: it KEEPS IT RUNNING and hands\n"
+    "the reason to the SUBAGENT (not the orchestrator) as its next instruction.",
 )
 
 tmp = Path(tempfile.mkdtemp())
 (tmp / "docs" / "2").mkdir(parents=True)
 (tmp / "docs" / ".current_iteration").write_text("2")
-case("BLOCKS when the agent wrote nothing (JSON on stdout)", "check_subagent_output.py",
+case("keeps agent running when it wrote nothing (JSON on stdout)", "check_subagent_output.py",
      {}, 0, cwd=tmp, expect_stdout_json=True)
 
 (tmp / "docs" / "2" / "definition.md").write_text("# Design")

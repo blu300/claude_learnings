@@ -20,7 +20,7 @@ There are three levels, cheapest first:
 python3 -m pytest tests/ -q
 ```
 
-Expected: `35 passed`.
+Expected: `38 passed`.
 
 If `pytest` is missing: `pip install pytest`.
 
@@ -57,17 +57,26 @@ with the cursor at 2, a write to `docs/1/definition.md` is refused, so a later
 iteration cannot clobber an earlier one.
 
 **3. `warn_paste_in_prompt.py`** — the heuristic/structural split.
-It detects pasted content and prints a warning **and still exits 0**. Compare
-that directly with section 1, where a structural violation exits 2. This is the
+It detects pasted content and warns **while still exiting 0**. Compare that
+directly with section 1, where a structural violation exits 2. This is the
 single most important design decision in the system: a guess must never halt an
 unattended pipeline.
+
+Look at *how* it warns. It emits JSON on stdout — `systemMessage` for the user,
+`hookSpecificOutput.additionalContext` for Claude — not stderr. Stderr from a
+hook that exits 0 goes to the debug log and nobody ever sees it, so an earlier
+version of this hook that printed to stderr was completely inert while looking
+correct and passing its tests.
 
 **4. `warn_estimates_in_backlog.py`** — why PostToolUse exists.
 It reads the file's *content*, which does not exist until the write has already
 happened. No amount of PreToolUse cleverness can inspect a file that isn't
 written yet.
 
-**5. `validate_review_format.py`** — the only Post hook that blocks.
+**5. `validate_review_format.py`** — structural rules at a non-blocking event.
+PostToolUse **cannot block**: the malformed `review.md` is already on disk and
+stays there. Exit 2 shows the error to the reviewer so it rewrites the file —
+a weaker guarantee than the PreToolUse guards, and worth understanding as such.
 The two cases worth staring at are `REFUSES APPROVED that contradicts a FAIL`
 and `REFUSES CHANGES REQUESTED with all PASS`. The hook is enforcing *internal
 consistency* between two parts of a document — an agent cannot quietly approve
@@ -76,8 +85,13 @@ a design it just scored as failing.
 **6. `check_subagent_output.py`** — a different event, a different channel.
 Fires on `SubagentStop`, so it gets no `file_path` and its check is
 deliberately coarse. It replies with `{"decision": "block", "reason": ...}` on
-stdout while exiting 0 — a richer channel than a status code. Note the third
-case: with no cursor file it stays silent rather than guessing.
+stdout while exiting 0 — a richer channel than a status code.
+
+`block` here does **not** stop the agent: at SubagentStop it prevents the agent
+*finishing*, so the agent keeps running and receives the `reason` as its next
+instruction. That means the reason must be addressed to the **subagent**, not
+to the orchestrator, which never sees it. Note the third case too: with no
+cursor file the hook stays silent rather than guessing.
 
 **7. `iteration.py next --max 4`** — the cap.
 Five calls, four folders. The fifth exits 1 and creates nothing. The
@@ -247,6 +261,23 @@ Be clear about the limits of the walkthrough above, because they are real:
   survives.
 
 ---
+
+## Troubleshooting: nothing happens at all
+
+If you run the pipeline and no guard ever fires — no blocks, no warnings, as
+though the hooks were not there — check these before debugging any script:
+
+1. **Workspace trust.** Hooks declared in a project's agent or skill
+   frontmatter only run once the workspace trust dialog has been accepted for
+   the folder those files came from. Declining it, or never seeing it, disables
+   every project hook silently. Same applies to a project skill's
+   `allowed-tools`.
+2. **You are driving the steps by hand.** Skill-frontmatter hooks apply when
+   the *skill* is the orchestrator. Running the steps manually means they never
+   fire — use `scripts/verify_hooks.py` to exercise those directly.
+3. **You are looking for a stderr warning.** Warn-only hooks exit 0, and exit-0
+   stderr goes to the debug log only. Run with `--debug` to see it, or look for
+   the `systemMessage` in the transcript instead.
 
 ## Cleaning up after a run
 

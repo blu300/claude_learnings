@@ -4,8 +4,26 @@
 A PreToolUse hook on the orchestrator's Agent delegation calls. The pipeline
 rule is "pass file paths, never paste file contents into a prompt". That rule
 is a heuristic — a long prompt is *probably* pasted content, but not always —
-so this hook only warns. It prints to stderr and always exits 0, so a false
-positive can never halt an unattended pipeline.
+so this hook only warns and never blocks.
+
+HOW A WARNING ACTUALLY REACHES SOMEONE
+--------------------------------------
+Printing to stderr and exiting 0 does NOT work. Per the hooks reference:
+
+    "Stderr from a hook that exits 0 goes to the debug log only, never the
+     transcript, and Claude never sees it."
+    -- https://code.claude.com/docs/en/hooks
+
+So a warn-only hook must speak through JSON on stdout instead. Two channels,
+two audiences:
+
+    systemMessage                     -> shown to the USER, action proceeds
+    hookSpecificOutput.additionalContext -> given to CLAUDE next to the tool
+                                            result, so it can self-correct
+
+This hook emits both: the human watching the pipeline sees the warning, and
+the orchestrator gets told so it can stop pasting on the next delegation.
+Exit stays 0 — the tool call goes ahead either way.
 """
 
 import json
@@ -33,7 +51,18 @@ def main() -> int:
         warnings.append("Prompt contains fenced code blocks — may contain pasted file content.")
 
     if warnings:
-        print("Warning: " + " ".join(warnings), file=sys.stderr)
+        detail = " ".join(warnings)
+        print(json.dumps({
+            "systemMessage": f"Warning: {detail}",
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "additionalContext": (
+                    f"Delegation prompt may contain pasted file content. {detail} "
+                    f"The pipeline rule is to pass file paths only — the agents "
+                    f"read and write files themselves."
+                ),
+            },
+        }))
 
     return 0
 
