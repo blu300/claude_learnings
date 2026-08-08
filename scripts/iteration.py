@@ -74,6 +74,20 @@ def main(argv: list[str]) -> int:
         return 0
 
     if command == "next":
+        max_iterations = None
+        if "--max" in argv:
+            max_idx = argv.index("--max")
+            if max_idx + 1 < len(argv) and argv[max_idx + 1].isdigit():
+                max_iterations = int(argv[max_idx + 1])
+
+        if max_iterations and found and found[-1] >= max_iterations:
+            print(
+                f"Maximum of {max_iterations} iterations reached. "
+                f"Current highest: docs/{found[-1]}",
+                file=sys.stderr,
+            )
+            return 1
+
         number = (found[-1] + 1) if found else 1
         folder = DOCS / str(number)
         folder.mkdir(parents=True)
