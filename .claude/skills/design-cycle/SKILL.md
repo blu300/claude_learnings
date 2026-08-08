@@ -1,0 +1,101 @@
+---
+name: design-cycle
+description: Runs the clarify, design, review and backlog pipeline. Takes a brief, questions it, loops design and review until the review is clean, then produces a backlog.
+argument-hint: [path-to-brief]
+disable-model-invocation: true
+allowed-tools: Bash(python3 scripts/iteration.py *) Read Edit
+---
+
+# Design cycle
+
+You are the orchestrator. You run in the main session so that you can put
+questions to the human; delegated agents cannot ask questions, they can only
+write them to a file for you to relay.
+
+Brief: $ARGUMENTS
+
+## Existing iteration folders
+
+!`python3 scripts/iteration.py list 2>/dev/null || echo "(none yet)"`
+
+## Rules that apply throughout
+
+- Never paste file contents into a delegation prompt. Pass file paths only.
+  The agents read and write files themselves; you route paths between them.
+- Never write `clarification.md`, `definition.md`, `review.md` or
+  `backlog.md`. The one exception is the **Answers** section of
+  `clarification.md`, which is yours to fill in. If an agent fails to write
+  its file, report the failure and stop.
+- Keep your own reading to a minimum. Read the questions from
+  `clarification.md`, and read only the `Verdict:` line and any
+  `Questions for human` section from each `review.md`. Do not read the design
+  documents at all.
+- `clarification.md` lives in `docs/1` only, and is carried forward to every
+  later iteration. It is the single record of everything the human has told
+  you.
+- Stop after 4 design iterations even if the review is still not clean.
+
+## Procedure
+
+### Clarify
+
+1. Create the first iteration folder:
+   `python3 scripts/iteration.py next` — it prints the folder path, e.g. `docs/1`.
+   Call this folder `<dir>`, and remember `<dir>/clarification.md` as the
+   clarification path for the whole run.
+
+2. Delegate to the `clarifier` agent. Give it the brief path and tell it to
+   write `<dir>/clarification.md`.
+
+3. Read that file. Put its assumptions and questions to the human in your
+   reply, in the clarifier's own words. Ask the blocking questions first and
+   say plainly that the useful ones can be skipped.
+
+4. Wait for the human. When they reply, write their answers into the
+   **Answers** section of `<dir>/clarification.md`, numbered to match the
+   questions. Record unanswered questions as unanswered rather than
+   guessing — the designer needs to know which assumptions still stand.
+
+### Design and review
+
+5. Delegate to the `designer` agent. Tell it:
+   - the brief path,
+   - the clarification path,
+   - the review file from the previous iteration, if there is one,
+   - that it must write its output to `<dir>/definition.md`.
+
+   On iterations after the first, resume the same designer instance rather
+   than spawning a fresh one, so it keeps the reasoning behind its earlier
+   choices.
+
+6. Delegate to the `reviewer` agent. Tell it to read `<dir>/definition.md`,
+   the brief and the clarification path, and to write `<dir>/review.md`.
+   Always spawn a fresh reviewer — never resume one — so each review starts
+   cold.
+
+7. Read the `Verdict:` line of `<dir>/review.md` and act on it:
+
+   - **`Verdict: QUESTIONS`** — stop the loop. Put the questions to the human,
+     in the reviewer's own words, and wait. When they reply, append the
+     answers to the **Answers** section of the clarification file, then create
+     the next folder, set `<dir>` to it, and go to step 5.
+
+   - **`Verdict: CHANGES REQUESTED`** — create the next folder with
+     `python3 scripts/iteration.py next`, set `<dir>` to it, and go back to
+     step 5, passing the previous iteration's `review.md` path.
+
+   - **`Verdict: APPROVED`** — go to step 8.
+
+### Backlog
+
+8. Delegate to the `backlog-writer` agent. Tell it to read the approved
+   `<dir>/definition.md` and write `<dir>/backlog.md`.
+
+9. Report to the human: the number of iterations, the paths to the approved
+   definition and the backlog, and anything the reviewer raised that was
+   accepted rather than fixed.
+
+## When you stop
+
+Report plainly. Do not summarise the design or the backlog back to the human
+— they can open the files. Say what happened and where the output is.
