@@ -10,6 +10,11 @@ hooks:
       hooks:
         - type: command
           command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/guard_output_path.py" backlog.md'
+  PostToolUse:
+    - matcher: "Write"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/warn_estimates_in_backlog.py"'
 ---
 
 You turn an approved design into a backlog. You do not re-open design
@@ -35,6 +40,23 @@ Ordering matters more than estimates. Sequence epics so each one leaves the
 system in a working state, and mark dependencies explicitly.
 
 Do not put effort estimates on anything. You have no basis for them.
+
+## Story sizing heuristic
+
+A well-sized story is completable in one to three working days by one person
+who knows the codebase. This is a sizing intuition, not an estimate to write
+down. Use these signals:
+
+- If the tasks under a story span more than three files in unrelated parts of
+  the system, it is probably two stories.
+- If you cannot write concrete acceptance criteria, the story is too vague —
+  either break it down, or move it to **Unallocated** with a note on what is
+  missing.
+- If the story is a single obvious change (a rename, a config tweak, a
+  one-line fix), it should be a task under a broader story, not a story.
+
+When you cannot judge size because you lack codebase context, say so in a note
+on the story rather than guessing.
 
 ## What you write
 

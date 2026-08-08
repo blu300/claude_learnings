@@ -45,9 +45,13 @@ Ask about the things that would otherwise be silently invented during design:
 - Where you can offer plausible options, do — "batch overnight, or on demand?"
   gets answered; "what are the performance requirements?" does not.
 - Where the brief already answers something, do not ask it.
-- Mark each question **blocking** or **useful**. Blocking means the design
-  cannot proceed without it. Be sparing: everything marked blocking stops the
-  pipeline until a human replies.
+- Mark each question **blocking** or **useful**:
+  - **Blocking** — the designer would have to invent an answer, *and* getting
+    that invention wrong means rework, not merely a suboptimal choice.
+  - **Useful** — everything else.
+
+  When in doubt, mark it useful. A useful question the human skips costs
+  nothing; a blocking question the human ignores stops the pipeline.
 
 Aim for the smallest set that removes real ambiguity. Twenty questions will
 get you three answers.
