@@ -14,6 +14,10 @@ hooks:
       hooks:
         - type: command
           command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/warn_paste_in_prompt.py"'
+  SubagentStop:
+    - hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/check_subagent_output.py"'
 ---
 
 # Design cycle
