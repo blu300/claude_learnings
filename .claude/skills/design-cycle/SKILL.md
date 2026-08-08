@@ -32,14 +32,16 @@ Brief: $ARGUMENTS
 
 - Never paste file contents into a delegation prompt. Pass file paths only.
   The agents read and write files themselves; you route paths between them.
-- Never write `clarification.md`, `definition.md`, `review.md` or
-  `backlog.md`. The one exception is the **Answers** section of
-  `clarification.md`, which is yours to fill in. If an agent fails to write
-  its file, report the failure and stop.
-- Keep your own reading to a minimum. Read the questions from
-  `clarification.md`, and read only the `Verdict:` line and any
-  `Questions for human` section from each `review.md`. Do not read the design
-  documents at all.
+- Never write `definition.md`, `review.md` or `backlog.md` — those belong to
+  the agents. The only files you write are the **Answers** section of
+  `clarification.md`, `docs/1/brief-snapshot.md`, and
+  `docs/.current_iteration`. A hook enforces this; anything else is refused.
+  If an agent fails to write its file, report the failure and stop.
+- Keep your own reading to a minimum. You may read exactly these: the
+  questions from `clarification.md`, `dispositions.md`, and the `Verdict:`
+  line plus any `Questions for human` section from each `review.md`. You
+  never read `definition.md`. Reading the design would make you a second
+  reviewer with none of the reviewer's discipline.
 - `clarification.md` lives in `docs/1` only, and is carried forward to every
   later iteration. It is the single record of everything the human has told
   you.
@@ -57,6 +59,12 @@ Brief: $ARGUMENTS
    remember `<dir>/clarification.md` as the clarification path for the whole
    run.
 
+   After creating `docs/1`, copy the brief to `docs/1/brief-snapshot.md`.
+   From this point forward, "the brief" means the snapshot path, not the
+   original — every agent receives the snapshot. This freezes the brief at
+   the moment the pipeline started, so a later edit to the original file
+   cannot silently change what the agents were working from mid-run.
+
    Before each delegation, record which iteration is active so the write
    guards can scope their checks: `echo <n> > docs/.current_iteration`
    (where `<n>` is the current folder number). Do this every time you set or
@@ -73,6 +81,12 @@ Brief: $ARGUMENTS
    **Answers** section of `<dir>/clarification.md`, numbered to match the
    questions. Record unanswered questions as unanswered rather than
    guessing — the designer needs to know which assumptions still stand.
+
+   When a new answer contradicts one already in the file (this happens when a
+   later reply supersedes an earlier one), do not overwrite the old answer.
+   Strike it through with `~~old answer~~` and add `**Superseded by #<n>**`,
+   then write the new answer as entry `<n>`. The designer must see both the
+   original assumption and its correction, and the link between them.
 
 ### Design and review
 
@@ -113,9 +127,11 @@ Brief: $ARGUMENTS
 8. Delegate to the `backlog-writer` agent. Tell it to read the approved
    `<dir>/definition.md` and write `<dir>/backlog.md`.
 
-9. Report to the human: the number of iterations, the paths to the approved
-   definition and the backlog, and anything the reviewer raised that was
-   accepted rather than fixed.
+9. Read the final iteration's `dispositions.md`, if it exists. Report to the
+   human: the number of iterations, the paths to the approved definition and
+   the backlog, and any findings the designer accepted rather than resolved
+   (the **Accepted** section of that file). The dispositions log is where you
+   get this — you still do not read the design to find it.
 
 ## When you stop
 
