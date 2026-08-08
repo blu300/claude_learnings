@@ -105,6 +105,19 @@ happened. A test that reports success it cannot evidence is worse than no test.
 
 === SETUP ===
 
+0. PREFLIGHT — prove the hooks can load before spending anything.
+   Delegate one legitimate task to the `reviewer` agent: read
+   docs/1/definition.md and docs/1/brief-snapshot.md, write a normal review
+   to docs/1/review.md. Then check:
+       grep guard_output_path docs/hook-audit.log
+   A line appears -> hooks load; restore the file (git checkout -- docs/1/review.md,
+   rm -f docs/hook-audit.log) and continue.
+   NO line -> STOP. Do not run the test. Agent-frontmatter hooks are being
+   skipped — almost always workspace trust (the skip error is visible only
+   in a debug log: rerun with `claude --debug-file hookdebug.txt` and look
+   for "Skipping frontmatter hooks"). See debug.md. A test run in this
+   state produces only false failures.
+
 1. Confirm you are in the repository root: `README.md`, `scripts/`, `tests/`
    and `.claude/` should all be present. If not, stop and say so.
 
