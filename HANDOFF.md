@@ -11,55 +11,42 @@ Hardening a four-agent design-cycle pipeline (clarifier → designer → reviewe
 
 ## Progress
 
-| Task | Status | Commit |
-|------|--------|--------|
-| 1: Add --max flag to iteration.py | DONE | `8b10c5d` |
-| 2: Scope guard_output_path.py (multi-filename + iteration scoping) | DONE | `953bb97` |
-| 3: Orchestrator write restriction hook | DONE — tests pass (17/17) |
-| 3b: SubagentStop output check hook (learning add-on) | DONE — tests pass |
-| 4: Warn-only hooks (paste + estimates) | Not started |
-| 5: Review format validation hook | Not started |
-| 6: Wire hooks into agent/skill config | Not started (depends on 1–5) |
-| 7: Designer writes dispositions.md | Not started |
-| 8: Reviewer reads dispositions | Not started (depends on 7) |
-| 9: Contradiction handling + brief snapshot | Not started |
-| 10: Reviewer rubric + structured scoring | Not started (depends on 5) |
-| 11: Clarifier rubric, designer deference, backlog granularity | Not started |
+**All 11 tasks complete.** Full suite: `python3 -m pytest tests/ -q` -> 35 passed.
 
-## Task 3 + 3b state (DONE)
+| Task | Status |
+|------|--------|
+| 1: Add --max flag to iteration.py | DONE |
+| 2: Scope guard_output_path.py (multi-filename + iteration scoping) | DONE |
+| 3: Orchestrator write restriction hook | DONE |
+| 3b: SubagentStop output check hook (learning add-on) | DONE |
+| 4: Warn-only hooks (paste + estimates) | DONE |
+| 5: Review format validation hook | DONE |
+| 6: Wire hooks into agent/skill config | DONE |
+| 7: Designer writes dispositions.md | DONE |
+| 8: Reviewer reads dispositions | DONE |
+| 9: Contradiction handling + brief snapshot | DONE |
+| 10: Reviewer rubric + structured scoring | DONE |
+| 11: Clarifier rubric, designer deference, backlog granularity | DONE |
 
-Task 3 is complete and committed:
-- `scripts/guard_orchestrator_write.py` + `tests/test_guard_orchestrator_write.py`
+## Learning guide
 
-Task 3b is a learning add-on that fills two gaps the plan left for later:
-the SubagentStop lifecycle event, and JSON hook output (instead of exit codes):
-- `scripts/check_subagent_output.py` — SubagentStop hook. When a delegated
-  agent finishes, checks that it left a .md file in the current iteration
-  folder. If not, returns `{"decision":"block","reason":...}` on stdout.
-  Coarse by design: SubagentStop gets no file_path, so it can only check
-  "did the agent write anything", not "did it write the right file".
-- `tests/test_check_subagent_output.py`
+`docs/GUIDE.md` explains every component and how the pieces fit together.
 
-Both are unwired for now — like Tasks 1–3, wiring into config is Task 6.
+## Notes for whoever picks this up
 
-Full suite: `python3 -m pytest tests/ -q` → 21 passed.
-
-## How to continue
-
-1. Read the plan at `docs/superpowers/plans/2026-08-08-pipeline-hardening.md` for full task details.
-2. Resume at Task 3 (run tests, commit).
-3. Tasks 4 and 5 are independent of each other — can be done in either order.
-4. Task 6 wires all the Phase 1 hooks into agent configs — do it after 1–5 are committed.
-5. Tasks 7–9 are Phase 2 (state loss). 7 and 9 are independent; 8 depends on 7.
-6. Tasks 10–11 are Phase 3 (drift). 10 depends on 5 (the hook validates the format it introduces). 11 is independent.
+- All six hook scripts are wired into config; nothing is left unreferenced.
+- The reviewer's documented scoring table was verified to pass
+  `validate_review_format.py`, so the prompt and its enforcing hook agree.
+- The backlog sizing heuristic is deliberately spelled out ("one to three
+  working days") rather than written with digits, so it cannot trip
+  `warn_estimates_in_backlog.py`.
+- Nothing has been run end-to-end against a real brief yet. The scripts are
+  unit-tested; the pipeline itself has not been exercised live.
 
 ## Testing pattern
 
-All tests use pytest. The script path must be absolute (`Path(__file__).resolve().parent.parent / "scripts" / ...`). Use `sys.executable` instead of `python3`. Use `cwd=str(tmp_path)` for scripts that read `docs/.current_iteration`. The `python3` alias doesn't work on this Windows machine — always use `sys.executable`.
-
-## Environment notes
-
-- Windows 10, Python 3.10.8
-- pytest installed to user site-packages (ignore the RequestsDependencyWarning in output — it's unrelated)
-- Git repo initialized at `c:\Users\Benjamin\Documents\Learning\claude_learning`
-- `.gitignore` excludes `.superpowers/`
+All tests use pytest. Script paths are absolute
+(`Path(__file__).resolve().parent.parent / "scripts" / ...`), and tests
+invoke `sys.executable` rather than a `python3` literal so they run on both
+Windows and Linux. Use `cwd=str(tmp_path)` for scripts that read
+`docs/.current_iteration`.
