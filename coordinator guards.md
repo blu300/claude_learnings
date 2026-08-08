@@ -120,11 +120,92 @@ Roughly in order of effort:
    and it is the widest thing in the list.
 3. **Cover the shell in the guard.** Add `Bash` to what the rule watches and
    have the script inspect the command for redirects into files it protects.
-   This is real work and will never be airtight — there are many ways to write
-   a file from a shell.
+   Real work, and never airtight — there are many ways to write a file from a
+   shell, and a guard that lists them is always one trick behind.
+4. **Make the coordinator an agent.** The proper fix. Its own section below.
 
-Option 3 is the only one that closes it, and it closes it imperfectly. Options
-1 and 2 are cheap and honest.
+Options 1 and 2 are cheap and honest. Option 3 patches the symptom. Option 4
+removes the cause.
+
+## Option 4 — make the coordinator an agent
+
+Everything above treats the gap as a hole to be plugged. It isn't. It is a
+consequence of the coordinator being a session, so the real fix is to stop it
+being one.
+
+Move the coordinator into `.claude/agents/coordinator.md` and give it the same
+kind of tool list the other four have:
+
+```yaml
+tools: Read, Write, Grep, Glob
+```
+
+No shell in the list, and `tools:` is a hard restriction — an agent cannot call
+anything outside it. There is no second route to close, because there is no
+second route. The existing `guard_orchestrator_write.py` then covers everything
+the coordinator can actually do, and the blinding rule finally holds.
+
+### "But agents can't talk to the human"
+
+This is the objection that makes people drop the idea, and it does not survive
+contact with the rest of the design.
+
+It is true that Claude Code strips the ask-the-user tool from every subagent,
+even when the agent's `tools:` field lists it. An agent cannot put a question to
+you directly.
+
+But **no agent in this pipeline ever does.** The clarifier does not ask you
+anything — it writes its questions to a file and stops. Something else reads
+that file and puts the questions to you. Passing questions through a file is
+not a workaround for agents; it is how the whole system already works.
+
+So a coordinator-agent gets questions to you exactly the way the clarifier
+does:
+
+```
+coordinator-agent writes the question down, and finishes
+        ↓
+your session reads it and asks you
+        ↓
+you answer
+        ↓
+your session starts the coordinator-agent again, with your answer
+        ↓
+it carries on from where it stopped
+```
+
+Your session is still involved — it has to be, since it is the only thing that
+can talk to you. But it is no longer *the coordinator*. It is a messenger
+carrying text in both directions. It has no procedure to follow, no design to
+be tempted by, and nothing to drift from. The judgement moves into an agent
+that can be restricted; the shell access stays with something that has no
+reason to write anything.
+
+### What it costs
+
+Not free, and worth being honest about:
+
+- **A restart per exchange.** An agent finishes when it reports. Every question
+  ends the coordinator-agent and starts it again. More round trips, more
+  tokens.
+- **The session still needs instructions.** Something has to tell it to relay
+  rather than improvise, so a thin skill remains. Much smaller, but not zero —
+  and it still has shell access. The gap narrows a great deal; it does not
+  vanish.
+- **Nesting.** The coordinator-agent would spawn the other four. Agents can
+  spawn agents up to a depth limit and this sits inside it, but **this has not
+  been tested here.** Treat it as the first thing to check before committing to
+  the redesign.
+
+### Should you do it?
+
+If the point is to learn the concepts, no. The guard already stops the failure
+that actually happens — a coordinator that forgets the rule and reaches for the
+normal write tool. Getting round it takes a deliberately odd way of writing a
+file, which is not what drifting looks like.
+
+If the point were to run this unattended and trust the blinding rule, then yes.
+Option 4 is the only one that makes the rule true rather than mostly true.
 
 ## The general lesson
 
@@ -136,6 +217,17 @@ thing has a route the guard doesn't watch.
 
 Before trusting a guard, ask: *what else could accomplish the same thing, and is
 the guard looking at that too?*
+
+And when the answer is "quite a few things", watching each route is the losing
+move. Take the capability away instead — which is option 4, and which is just
+the guide's first lesson coming back around: **restrict by capability, not by
+instruction.** A guard that watches for misuse is always one trick behind. A
+tool the agent does not have cannot be misused at all.
+
+The irony is that this repo already knew that. It is why the four specialists
+have no shell. The coordinator escaped the lesson only because it was not an
+agent, and nobody re-asked the question for the one component built a different
+way.
 
 ## Why this was found so late
 
