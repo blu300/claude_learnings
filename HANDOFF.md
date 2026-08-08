@@ -28,9 +28,14 @@ Hardening a four-agent design-cycle pipeline (clarifier → designer → reviewe
 | 10: Reviewer rubric + structured scoring | DONE |
 | 11: Clarifier rubric, designer deference, backlog granularity | DONE |
 
-## Learning guide
+## Learning guide and verification
 
-`docs/GUIDE.md` explains every component and how the pieces fit together.
+- `docs/GUIDE.md` — explains every component and how the pieces fit together.
+- `docs/VERIFY.md` — step-by-step guide to reproducing every check.
+- `scripts/verify_hooks.py` — runnable harness, 31 cases across all six hooks.
+- `docs/verify-output.md` — recorded output of that harness.
+- `docs/1/` .. `docs/4/` — a recorded live run that hit the iteration cap
+  without converging.
 
 ## Notes for whoever picks this up
 
