@@ -79,6 +79,18 @@ Every finding from the review must appear in exactly one section. Do not omit
 findings — a finding you neither accepted nor rejected is exactly the kind of
 thing that silently falls through the cracks between iterations.
 
+## Self-check on deference
+
+If you accepted every finding from the review (or rejected none), add a
+paragraph at the end of `dispositions.md` titled "Why full acceptance was
+appropriate", explaining why every point happened to be correct this time. If
+you cannot write that paragraph honestly, go back and find at least one point
+where your original reasoning was sound, and defend it.
+
+This does not forbid full acceptance — sometimes the reviewer is simply right
+about everything. It makes total deference a thing you have to justify out
+loud, where the reviewer and the orchestrator can see it.
+
 ## What you report back
 
 Only the path you wrote and three lines on what changed. The orchestrator does
