@@ -20,7 +20,7 @@ There are three levels, cheapest first:
 python3 -m pytest tests/ -q
 ```
 
-Expected: `38 passed`.
+Expected: `49 passed`.
 
 If `pytest` is missing: `pip install pytest`.
 
@@ -36,7 +36,7 @@ its output is checked. They tell you nothing about whether the hooks are
 python3 scripts/verify_hooks.py
 ```
 
-Expected: `31/31 cases behaved as expected`, exit code 0.
+Expected: `38/38 cases behaved as expected`, exit code 0.
 
 This is the one to read rather than just run. For every hook it prints the
 payload going in, the exit code coming out, and the message an agent would
@@ -46,15 +46,23 @@ never touches your real `docs/`.
 ### What each section shows
 
 **1. `guard_orchestrator_write.py`** — the blinding rule, enforced.
-Watch it allow `clarification.md`, `brief-snapshot.md` and `.current_iteration`,
-then refuse `definition.md` with **exit 2**. This is why the orchestrator can be
-trusted not to write the design: it *can't*.
+Watch it allow `docs/1/clarification.md` and `docs/1/brief-snapshot.md`, then
+refuse everything else with **exit 2** — the design, the cursor file (which
+`iteration.py` owns now), a `clarification.md` outside `docs/1`, and a
+lookalike path outside the project. This is why the orchestrator can be
+trusted not to write the design with its file tools: it *can't*. (Its shell
+is another matter — see `coordinator guards.md`.)
 
-**2. `guard_output_path.py`** — one guard, four agents, iteration-scoped.
+**2. `guard_output_path.py`** — one guard, four agents, anchored and scoped.
 The allowed filenames arrive as CLI arguments, which is how a single script
-serves every agent. The interesting case is `REFUSES a PREVIOUS iteration`:
-with the cursor at 2, a write to `docs/1/definition.md` is refused, so a later
-iteration cannot clobber an earlier one.
+serves every agent. Three cases to stare at: `REFUSES a PREVIOUS iteration`
+(with the cursor at 2, a write to `docs/1/definition.md` is refused, so a
+later iteration cannot clobber an earlier one), `REFUSES a lookalike tree`
+(a path that merely *ends* in `docs/2/definition.md` but lives outside the
+project — the bug the anchoring fix closed), and `REFUSES unknown options`
+(a dropped flag must not silently corrupt the allowlist). The section ends by
+printing `docs/hook-audit.log` from the temp scope — every decision you just
+watched, recorded by the scripts themselves.
 
 **3. `warn_paste_in_prompt.py`** — the heuristic/structural split.
 It detects pasted content and warns **while still exiting 0**. Compare that
@@ -93,9 +101,13 @@ instruction. That means the reason must be addressed to the **subagent**, not
 to the orchestrator, which never sees it. Note the third case too: with no
 cursor file the hook stays silent rather than guessing.
 
-**7. `iteration.py next --max 4`** — the cap.
-Five calls, four folders. The fifth exits 1 and creates nothing. The
-orchestrator cannot loop forever because there is nowhere left to write.
+**7. `iteration.py next`** — the cap, no flag required.
+Five calls, four folders. The fifth exits 1 and creates nothing — the cap is
+a constant in the script, `--max` can lower it but never raise it (watch the
+`--max 99` call refuse), and each successful call moves
+`docs/.current_iteration` itself. The orchestrator cannot loop forever
+because there is nowhere left to write, and it cannot forget the cursor
+because it never touches it.
 
 ---
 
@@ -113,21 +125,22 @@ This exercises the agents themselves. Budget ~20 minutes; each agent takes
 ### Setup
 
 ```bash
-# 1. Write a brief — anything small with real ambiguity in it
-cat > brief.md <<'EOF'
+# 1. Write a brief — anything small with real ambiguity in it.
+#    (brief.md at the repo root belongs to the committed run — use a new file.)
+cat > my-brief.md <<'EOF'
 # Brief: <your thing>
 <a few sentences describing what you want and why>
 EOF
 
-# 2. Create iteration 1, set the cursor, snapshot the brief
-python3 scripts/iteration.py next --max 4     # prints docs/1
-echo "1" > docs/.current_iteration
-cp brief.md docs/1/brief-snapshot.md
+# 2. Create iteration 1 and snapshot the brief. The script enforces the cap
+#    and writes docs/.current_iteration itself — no cursor step needed.
+python3 scripts/iteration.py next             # prints docs/1
+cp my-brief.md docs/1/brief-snapshot.md
 ```
 
 The snapshot matters: from here on every agent reads
-`docs/1/brief-snapshot.md`, never `brief.md`. Edit the original mid-run and the
-agents are unaffected.
+`docs/1/brief-snapshot.md`, never `my-brief.md`. Edit the original mid-run and
+the agents are unaffected.
 
 ### The clarify step
 
@@ -176,8 +189,7 @@ prompt and enforcement agreeing on a live artifact.
 On `CHANGES REQUESTED`, bump the iteration and go round again:
 
 ```bash
-python3 scripts/iteration.py next --max 4
-echo "2" > docs/.current_iteration
+python3 scripts/iteration.py next   # creates docs/2 and moves the cursor
 ```
 
 **Resume the same designer** (do not spawn a new one) and ask for both files
@@ -193,7 +205,7 @@ independence.
 - `Verdict: CHANGES REQUESTED` on iteration 4 → the cap fires. Confirm it:
 
 ```bash
-python3 scripts/iteration.py next --max 4   # exit 1, no docs/5
+python3 scripts/iteration.py next   # exit 1, no docs/5 — the cap is in the script
 ```
 
 Either way, report from `dispositions.md` — never from the design.
@@ -252,9 +264,14 @@ Be clear about the limits of the walkthrough above, because they are real:
   run no agent ever attempted a bad write, so every block shown came from
   feeding a script a payload. The scripts are proven; "a hook automatically
   stops a misbehaving agent" is not.
-- **`memory: project` appears inert.** Three agents declare it and their
-  prompts rely on it, but the designer reported twice that it found no memory
-  directory or tool available. Treat that feature as unverified.
+- **`memory: project` was inert in the recorded run — and the docs say when
+  it would be.** The `memory` field only takes effect when Claude Code's auto
+  memory is enabled; with auto memory off, the agent launches without memory
+  instructions or tools
+  ([sub-agents reference](https://code.claude.com/docs/en/sub-agents)). The
+  designer reporting "no memory directory available" is consistent with auto
+  memory being off in that session, not with a broken declaration. To see the
+  feature work, enable auto memory and re-run.
 - **One run is not evidence.** The anti-re-litigation check was confounded: the
   rejected remedy became moot when the designer deleted the component it
   attached to. A cleaner test needs a finding rejected while the component
@@ -267,6 +284,10 @@ Be clear about the limits of the walkthrough above, because they are real:
 If you run the pipeline and no guard ever fires — no blocks, no warnings, as
 though the hooks were not there — check these before debugging any script:
 
+0. **Read `docs/hook-audit.log` first.** Every guard appends a line per
+   decision. Lines present means the hooks ran and simply had nothing to
+   block; an empty or missing log after a full run means they never loaded —
+   and the causes below are the usual suspects.
 1. **Workspace trust.** Hooks declared in a project's agent or skill
    frontmatter only run once the workspace trust dialog has been accepted for
    the folder those files came from. Declining it, or never seeing it, disables
@@ -282,10 +303,11 @@ though the hooks were not there — check these before debugging any script:
 ## Cleaning up after a run
 
 ```bash
-rm -rf docs/1 docs/2 docs/3 docs/4 docs/.current_iteration brief.md
+rm -rf docs/1 docs/2 docs/3 docs/4 docs/.current_iteration docs/hook-audit.log my-brief.md
 ```
 
-Keep `docs/GUIDE.md`, `docs/VERIFY.md` and `docs/superpowers/`.
+Keep `docs/GUIDE.md`, `docs/VERIFY.md` and `docs/superpowers/` — and keep
+`brief.md` at the repo root: it is the committed input of the recorded run.
 
 `docs/.current_iteration` is gitignored — it is a runtime cursor, not an
 artifact.

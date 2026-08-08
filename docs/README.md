@@ -6,14 +6,17 @@ hand; `scripts/iteration.py` creates the folders and the agents write the files.
 ```
 docs/
 ├── 1/
+│   ├── brief-snapshot.md  your brief, frozen at the start of the run
 │   ├── clarification.md   questions from the clarifier, answers from you
 │   ├── definition.md      written by the designer agent
 │   └── review.md          written by the reviewer agent
 ├── 2/
 │   ├── definition.md      revised against docs/1/review.md
+│   ├── dispositions.md    what the designer did with each review finding
 │   └── review.md
 └── 3/
     ├── definition.md
+    ├── dispositions.md
     ├── review.md          Verdict: APPROVED
     └── backlog.md         written by the backlog-writer agent
 ```

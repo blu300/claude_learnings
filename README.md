@@ -8,9 +8,10 @@ agents interrogate it, design it, review the design, and break the result into
 a backlog. A coordinator routes between them and relays anything that needs a
 human.
 
-It is deliberately small — four agents, one skill, six hook scripts and a
-folder-management script, none longer than about ninety lines — because the
-point is to be readable, not impressive.
+It is deliberately small — four agents, one skill, six hook scripts, a shared
+audit-log module and a folder-management script, none longer than about a
+hundred and twenty lines — because the point is to be readable, not
+impressive.
 
 ```
        you ──▶ /design-cycle brief.md
@@ -74,15 +75,17 @@ returns one of three verdicts:
 |---|---|
 | `APPROVED` | Move on to the backlog |
 | `CHANGES REQUESTED` | New iteration, designer revises, review again |
-| `QUESTIONS` | **Stops and asks you** — the criteria themselves are ambiguous |
+| `QUESTIONS` | **Stops and asks you** — the criteria themselves are ambiguous. The round is then redone in place with your answers; it doesn't spend an iteration |
 
-The loop runs until approval or **four iterations**, whichever comes first. The
-cap is a hard stop, not a guideline.
+The loop runs until approval or **four iterations**, whichever comes first.
+The cap is a hard stop, not a guideline — it is a constant in the folder
+script itself, and nothing the pipeline does at runtime can raise it.
 
 **3. It may come back to you.** Only on `QUESTIONS`. The reviewer can't reach
-you directly — no subagent can — so it writes the question down and the
-orchestrator relays it. Your answers are appended to the same clarification
-file, which is the single record of everything you have said.
+you directly — none of the four agents has a question-asking tool — so it
+writes the question down and the orchestrator relays it. Your answers are
+appended to the same clarification file, which is the single record of
+everything you have said.
 
 **4. It reports.** When the run ends you get: how many iterations it took, the
 paths to the design and backlog, and any review findings the designer
@@ -164,9 +167,12 @@ Two fields do the real work:
 
 Same mechanism, opposite settings, opposite reasons.
 
-**Subagents cannot talk to you.** Only the orchestrator can. That is why every
-human question is written to a file and relayed — the relay pattern is a
-consequence of isolation, not a design flourish.
+**These four agents cannot talk to you.** Not because subagents never can —
+Claude Code lets a subagent ask the user questions if it has the tool — but
+because these four are deliberately not given it, the same way they are not
+given a shell. Every human question is therefore written to a file and
+relayed by the orchestrator, and every answer lands in one durable record
+instead of a transcript.
 
 ## Skills — the packaged procedure
 
@@ -178,7 +184,7 @@ A **skill** is a procedure Claude follows, at
 name: design-cycle
 argument-hint: [path-to-brief]
 disable-model-invocation: true
-allowed-tools: Bash(python3 scripts/iteration.py *) Bash(echo *) Read Edit
+allowed-tools: Bash(python3 scripts/iteration.py *) Read Edit
 ---
 ```
 
@@ -256,13 +262,14 @@ content. Blocking on a guess would halt an unattended pipeline for no reason.
 
 | Script | Event | Does |
 |---|---|---|
-| `guard_output_path.py` | Pre | One guard, four agents. Allowed filenames as CLI args; also refuses writes to an *older* iteration |
-| `guard_orchestrator_write.py` | Pre | Enforces the blinding rule — orchestrator may write three files, nothing else |
+| `guard_output_path.py` | Pre | One guard, four agents. Allowed filenames as CLI args; anchored to the project root; refuses writes to an *older* iteration |
+| `guard_orchestrator_write.py` | Pre | Enforces the blinding rule — orchestrator may write two files, both in `docs/1`, nothing else |
 | `warn_paste_in_prompt.py` | Pre (`Agent`) | Warns when a delegation prompt looks like pasted file content |
 | `warn_estimates_in_backlog.py` | Post | Warns on effort estimates. Must be Post — it reads content that doesn't exist until the write lands |
 | `validate_review_format.py` | Post | Rejects a review whose verdict contradicts its own scoring table |
 | `check_subagent_output.py` | SubagentStop | Catches an agent that finished without writing its file |
-| `iteration.py` | *not a hook* | Creates numbered folders. `--max 4` is the cap |
+| `hook_audit.py` | *not a hook* | One line per guard decision into `docs/hook-audit.log` — the mechanical record the live-fire test checks |
+| `iteration.py` | *not a hook* | Creates numbered folders, moves the cursor, and enforces the 4-iteration cap — the cap is a constant in the script |
 
 ⚠️ **Project hooks only run once you accept the workspace trust dialog.**
 Decline it and every guard here silently does nothing.
@@ -285,6 +292,8 @@ Subagents share no memory, so anything that must cross an agent boundary is
   change of direction happened.
 - **`.current_iteration`** — one line, one number. How a hook (a separate
   process, with no access to the conversation) learns which round is active.
+  Written by `iteration.py` whenever it creates a folder, so it can never be
+  forgotten or drift out of step.
 
 ## Drift — where code can't reach
 
@@ -307,8 +316,12 @@ alone.
   makes a sloppy review *identifiable afterwards*, not impossible.
 - The orchestrator relaying your answers is lossy. A reply with three
   conditions gets simplified.
-- `memory: project` is declared by three agents but appeared inert in testing —
-  treat that feature as unverified here.
+- **The orchestrator has a shell its write guard cannot see.** The guard
+  watches the file tools; a skill in the main session also has Bash. This is
+  a known, documented gap, kept deliberately — the analysis is in
+  `coordinator guards.md` and the decision in `docs/hardening.md`.
+- `memory: project` is declared by three agents but only takes effect when
+  Claude Code's auto memory is on; it was inert in the recorded run.
 
 Knowing what your guardrails miss matters as much as knowing what they catch.
 
@@ -317,23 +330,43 @@ Knowing what your guardrails miss matters as much as knowing what they catch.
 ## Try it
 
 ```bash
-python3 -m pytest tests/ -q         # 38 passed — the scripts are correct
-python3 scripts/verify_hooks.py     # 31 cases — watch each hook decide
+python3 -m pytest tests/ -q         # 49 passed — the scripts are correct
+python3 scripts/verify_hooks.py     # 38 cases — watch each hook decide
 ```
 
 The second one is the one to *read*. It prints the JSON going in, the exit code
 coming out, and the message the agent would see, for every hook.
 
-## Where to go next
+## The learning path
 
-| File | For |
-|---|---|
-| **`docs/GUIDE.md`** | The full explanation — every mechanism, why each choice was made, and the transferable lessons |
-| **`docs/VERIFY.md`** | Reproducing every check yourself, including a live run, and what a manual run does *not* prove |
-| `docs/1/` – `docs/4/` | A real run to read |
-| `.claude/agents/*.md` | The four agent prompts — short, and worth reading directly |
-| `.claude/skills/design-cycle/SKILL.md` | The orchestrator's procedure |
-| `docs/superpowers/` | The original spec and implementation plan |
+In order. Each step assumes the ones before it.
+
+1. **This README**, top to bottom — the shape of the system and the four
+   mechanisms.
+2. **Run the tests**: `python3 -m pytest tests/ -q`. This proves the scripts
+   are correct, and nothing else — a distinction the rest of the path keeps
+   coming back to.
+3. **Run and read `python3 scripts/verify_hooks.py`** — every hook shown
+   deciding, with the JSON in, the exit code out, and the audit log it leaves
+   behind.
+4. **Read `docs/GUIDE.md`** — every mechanism in depth, why each choice was
+   made, and the fifteen transferable lessons.
+5. **Read the recorded run** in `docs/1/` – `docs/4/`, with the "Results from
+   the recorded run" section of `docs/VERIFY.md` as your companion. It did
+   not converge, and that outcome is worth seeing.
+6. **Read the prompts themselves**: `.claude/agents/*.md` and
+   `.claude/skills/design-cycle/SKILL.md`. After the guide, you will
+   recognise every line.
+7. **Read `coordinator guards.md`** — a real gap found in this system's own
+   guards, what it would take to close it, and why it was kept open.
+8. **Read `docs/hardening.md`** — the review pass that followed: bugs found,
+   claims corrected, and the redesign deliberately not done.
+9. **Optional capstone**: run the live-fire test in `LLM as judge.md`. It
+   takes a real session, real money, and ~30 minutes, and it tests the one
+   thing nothing above can — whether the harness actually runs these guards.
+
+`docs/superpowers/` holds the original spec and implementation plan — the
+historical record, superseded in places by the hardening pass.
 
 Behavioural claims here are checked against the
 [Claude Code docs](https://code.claude.com/docs/en/hooks). If you observe

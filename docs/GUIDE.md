@@ -4,9 +4,9 @@ This is a guide to how this repository works, written to teach the mechanisms
 rather than just document the code. It covers **subagents**, **skills**,
 **hooks**, and **the state that passes between them**.
 
-The system is deliberately small: four agents, one skill, six hook scripts and
-one folder-management script. Nothing here needs to be more complicated than it
-is.
+The system is deliberately small: four agents, one skill, six hook scripts, a
+shared audit-log module and one folder-management script. Nothing here needs
+to be more complicated than it is.
 
 ---
 
@@ -112,9 +112,16 @@ Same mechanism, opposite settings, for opposite reasons.
 
 ### The relay pattern
 
-Subagents **cannot talk to the human**. Only the orchestrator can. So when the
-clarifier has questions, it writes them to a file, and the orchestrator reads
-them out and relays the answers back. Every human interaction is a relay.
+The four specialists **cannot talk to the human** — but be precise about why,
+because the first version of this guide got it wrong. It is not a platform
+limit: current Claude Code lets a subagent use the `AskUserQuestion` tool,
+with the prompt surfacing in the main session
+([tools reference](https://code.claude.com/docs/en/tools-reference)). These
+four cannot ask because that tool is not in their `tools:` list — the same
+restrict-by-capability move as withholding `Bash`. So when the clarifier has
+questions, it writes them to a file, and the orchestrator reads them out and
+relays the answers back. Every human interaction is a relay, and every answer
+lands in one durable file instead of a transcript.
 
 This is also why the orchestrator is told to **pass file paths, never file
 contents**. Pasting a design into a prompt would blow up context and duplicate
@@ -133,7 +140,7 @@ name: design-cycle
 description: Runs the clarify, design, review and backlog pipeline...
 argument-hint: [path-to-brief]
 disable-model-invocation: true
-allowed-tools: Bash(python3 scripts/iteration.py *) Bash(echo *) Read Edit
+allowed-tools: Bash(python3 scripts/iteration.py *) Read Edit
 hooks: ...
 ---
 ```
@@ -332,21 +339,30 @@ everything, defeating the purpose.*
 
 ---
 
-## 5. The seven scripts
+## 5. The eight scripts
 
-All are stdlib-only Python, all under ~90 lines.
+All are stdlib-only Python, all under ~120 lines.
 
 ### `iteration.py` — folder management *(not a hook)*
 
-Prints/creates numbered iteration folders. The hardening added `--max`:
+Prints/creates numbered iteration folders, and does two more things that used
+to be the orchestrator's job:
+
+- **The cap lives here, as a constant.** `DEFAULT_MAX = 4` in the script.
+  An earlier version armed the cap only when the orchestrator passed
+  `--max 4` — which made "a gate the orchestrator cannot override" untrue,
+  since not passing the flag removed the gate. Now no flag is needed,
+  `--max` can lower the cap but never raise it, and an invalid value is a
+  loud error instead of a silent no-op. To change the real cap, a human
+  edits the file.
+- **Creating a folder writes `docs/.current_iteration`** in the same call.
+  The guards' cursor is set atomically with the folder it points at, so it
+  cannot be forgotten, and the orchestrator needs no shell access to
+  maintain it.
 
 ```bash
-python3 scripts/iteration.py next --max 4   # exits 1 if docs/4 already exists
+python3 scripts/iteration.py next   # exits 1 if docs/4 already exists
 ```
-
-This converts the prose rule *"stop after 4 design iterations"* into a gate
-the orchestrator **cannot override**, because it isn't the one deciding — the
-script exits non-zero and there's no fifth folder to write into.
 
 ### `guard_output_path.py` — PreToolUse, hard-block
 
@@ -356,8 +372,12 @@ Used by all four agents. Takes the allowed filename(s) as arguments:
 command: '... guard_output_path.py definition.md dispositions.md'
 ```
 
-Blocks any write that isn't `docs/<n>/<one-of-those-names>`. It also scopes by
-iteration: it reads `docs/.current_iteration` and refuses writes into an
+Blocks any write that isn't `docs/<n>/<one-of-those-names>` **inside the
+project**. The anchoring matters: an earlier version checked only how the
+path *ended*, so a lookalike tree anywhere on disk
+(`/tmp/evil/docs/2/review.md`) sailed through. Paths now resolve against the
+project root (`CLAUDE_PROJECT_DIR`) and must land inside it. It also scopes
+by iteration: it reads `docs/.current_iteration` and refuses writes into an
 *older* folder, so iteration 3's designer cannot overwrite iteration 2's work.
 
 **Why a file and not an environment variable?** From the spec: *"This avoids
@@ -368,11 +388,17 @@ read.
 ### `guard_orchestrator_write.py` — PreToolUse, hard-block
 
 Enforces the blinding rule from the write side. The orchestrator may write
-exactly three things — `clarification.md`, `docs/1/brief-snapshot.md`, and
-`docs/.current_iteration` — and nothing else.
+exactly two things — `docs/1/clarification.md` and `docs/1/brief-snapshot.md`
+— and nothing else. Both live in `docs/1` only, and the guard is exactly as
+tight as the rule.
 
 Note its failure mode: if it can't parse the tool call, it **blocks**. For a
 structural guard, fail-closed is correct.
+
+Note also its **known limit**: it watches Write and Edit, and the
+orchestrator — a skill in the main session — also has a shell the guard does
+not see. That gap is documented and deliberately kept; `coordinator guards.md`
+is the analysis and `docs/hardening.md` records the decision.
 
 ### `warn_paste_in_prompt.py` — PreToolUse on `Agent`, warn-only
 
@@ -445,6 +471,20 @@ and documents the limit. It also stays silent when it can't tell which folder
 is active (no marker file → exit 0), because a guard that fires outside its
 intended context is worse than no guard.
 
+### `hook_audit.py` — the mechanical record *(not a hook)*
+
+One shared function, used by every hook above: each decision appends a line —
+timestamp, script, allow/block/warn, detail — to `docs/hook-audit.log`
+(gitignored).
+
+It exists because a guard's block message is seen only by the agent that
+triggered it. After a live run, "no blocks happened" and "no hooks ever
+loaded" look identical from the transcript — the log is the only thing that
+can tell them apart, and it is written by the scripts themselves, not by the
+session being tested. The live-fire test (`LLM as judge.md`) cross-checks its
+evidence against this file. Logging failures are swallowed: the record must
+never be the thing that breaks a guard.
+
 ---
 
 ## 6. State: how information survives between agents
@@ -493,8 +533,10 @@ direction ever happened.
 ### `.current_iteration` — the shared cursor
 
 One line, one number. It's how a hook (a separate process, with no access to
-the conversation) learns which iteration is active. The orchestrator updates it
-before each delegation.
+the conversation) learns which iteration is active. `iteration.py` writes it
+whenever it creates a folder — the orchestrator used to update it by hand
+with `echo`, which meant a forgettable step and a shell grant; moving it into
+the script removed both.
 
 The spec is honest that this is imperfect: two pipelines running in the same
 directory would race on this file. Accepted for v1, documented as an open
@@ -558,9 +600,11 @@ file others read**. Social friction where mechanical enforcement is impossible.
 ## 8. Putting it together: one full run
 
 1. Human runs the skill with a brief path.
-2. Orchestrator creates `docs/1` (`--max 4` gate), copies the brief to
-   `brief-snapshot.md`, writes `1` to `.current_iteration`.
-   *Guard allows all three — they're on its allow-list.*
+2. Orchestrator creates `docs/1` with `iteration.py next` — which enforces
+   the cap and records the folder in `.current_iteration` itself — then
+   copies the brief to `brief-snapshot.md`.
+   *The snapshot is on the guard's allow-list; the cursor is the script's
+   business, not the orchestrator's.*
 3. Delegates to **clarifier** → writes `docs/1/clarification.md`.
    *PreToolUse guard checks the filename. SubagentStop checks it wrote
    something.*
@@ -571,10 +615,12 @@ file others read**. Social friction where mechanical enforcement is impossible.
 6. Delegates to **reviewer** (fresh) → `docs/1/review.md`.
    *PostToolUse validator rejects a malformed or self-contradicting review.*
 7. Orchestrator reads **only the `Verdict:` line**.
-   - CHANGES REQUESTED → new folder, update `.current_iteration`, back to 5.
-     The designer is *resumed* and also writes `dispositions.md`; the reviewer
-     is *fresh* and reads that log.
-   - QUESTIONS → relay to the human.
+   - CHANGES REQUESTED → new folder (`iteration.py next`, which moves the
+     cursor too), back to 5. The designer is *resumed* and also writes
+     `dispositions.md`; the reviewer is *fresh* and reads that log.
+   - QUESTIONS → relay to the human, then redo the round **in the same
+     folder**. The design wasn't judged wrong — it couldn't be judged at all
+     — so a question round doesn't spend one of the four iterations.
    - APPROVED → continue.
 8. Delegates to **backlog-writer** → `backlog.md`.
    *Estimate-warn hook flags any effort estimates.*
@@ -595,6 +641,18 @@ Stated plainly in the spec, and worth keeping in view:
 - **Lossy transcription.** A human answer with three conditions will still get
   simplified by the orchestrator relaying it. The real fix — the human writing
   directly into the file — is outside the pipeline's scope.
+- **The orchestrator's shell.** Its write guard watches Write and Edit; as a
+  skill in the main session it also has Bash, which the guard does not see.
+  The full analysis is in `coordinator guards.md`, and the decision to keep
+  the coordinator a skill anyway — this is a learning repo, and the failure
+  the guard exists for is drift, not evasion — is recorded in
+  `docs/hardening.md`.
+- **`memory: project` needs auto memory on.** Three agents declare it, and in
+  testing it appeared inert — the docs explain why: the `memory` field only
+  takes effect when Claude Code's auto memory is enabled; with it off, the
+  agent launches without memory instructions or tools
+  ([sub-agents reference](https://code.claude.com/docs/en/sub-agents)). The
+  declarations are kept, correctly described as conditional.
 
 Knowing what your guardrails *don't* catch is as important as knowing what they
 do.
@@ -639,6 +697,14 @@ do.
     guide lived in exactly that gap, and a fully green test suite could not
     see any of them. Green tests measure the thing you tested, not the thing
     you asserted.
+14. **A guard that checks how a path ends trusts everything before it.**
+    The first version of the write guards passed any path ending in
+    `docs/<n>/<file>` — including `/tmp/evil/docs/2/review.md`. Anchor path
+    rules to a root and require the resolved path to land inside it.
+15. **Guards should leave a record.** A block message reaches only the agent
+    that triggered it; afterwards, "nothing fired" and "nothing was loaded"
+    look the same. One append-only log line per decision makes the difference
+    checkable — and gives any later audit something mechanical to trust.
 
 ---
 
