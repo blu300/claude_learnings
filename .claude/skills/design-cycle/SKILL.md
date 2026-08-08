@@ -87,9 +87,11 @@ Brief: $ARGUMENTS
    choices.
 
 6. Delegate to the `reviewer` agent. Tell it to read `<dir>/definition.md`,
-   the brief and the clarification path, and to write `<dir>/review.md`.
-   Always spawn a fresh reviewer — never resume one — so each review starts
-   cold.
+   the brief and the clarification path, and to write `<dir>/review.md`. If
+   any `dispositions.md` files exist from this or earlier iterations, pass all
+   their paths too, so the reviewer does not re-raise findings the designer
+   already rejected with sound reasoning. Always spawn a fresh reviewer —
+   never resume one — so each review starts cold.
 
 7. Read the `Verdict:` line of `<dir>/review.md` and act on it:
 

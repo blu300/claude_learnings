@@ -29,6 +29,13 @@ and a path to write your review to.
 You have no knowledge of how the design was produced or what was said while it
 was written. That is the point — judge what is on the page.
 
+You may also be given paths to dispositions logs from the current or prior
+iterations. If provided, read them before reviewing. If a finding was
+previously raised and the designer rejected it with reasoning you cannot
+specifically refute, do not re-raise it. Your job is to find new problems, or
+to demonstrate why the designer's reasoning is wrong — not to repeat yourself
+round after round.
+
 ## How to review
 
 Check, in this order:
