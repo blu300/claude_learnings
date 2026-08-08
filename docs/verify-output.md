@@ -107,11 +107,11 @@ does not exist until the write has happened. Heuristic -> warn only.
 ========================================================================
 
   silent on a clean backlog
-    in  : /tmp/tmptd_ng62z/clean.md
+    in  : /tmp/tmpr2xl7oot/clean.md
     exit: 0   (expected 0)   PASS
 
   warns on time units and story points (still exit 0)
-    in  : /tmp/tmptd_ng62z/dirty.md
+    in  : /tmp/tmpr2xl7oot/dirty.md
     exit: 0   (expected 0)   PASS
     stderr: Warning: backlog appears to contain effort estimates (found: days, points, Estimate). The spec says not to estimate.
 
@@ -122,34 +122,34 @@ structure is structural, not heuristic. Catches self-contradiction.
 ========================================================================
 
   accepts APPROVED with all PASS
-    in  : /tmp/tmp2l0218_5/a.md
+    in  : /tmp/tmplamd1cli/a.md
     exit: 0   (expected 0)   PASS
 
   accepts CHANGES REQUESTED with a FAIL
-    in  : /tmp/tmp2l0218_5/b.md
+    in  : /tmp/tmplamd1cli/b.md
     exit: 0   (expected 0)   PASS
 
   accepts QUESTIONS with no table
-    in  : /tmp/tmp2l0218_5/c.md
+    in  : /tmp/tmplamd1cli/c.md
     exit: 0   (expected 0)   PASS
 
   REFUSES a missing verdict line
-    in  : /tmp/tmp2l0218_5/d.md
+    in  : /tmp/tmplamd1cli/d.md
     exit: 2   (expected 2)   PASS
     stderr: Blocked: First line must be 'Verdict: APPROVED|CHANGES REQUESTED|QUESTIONS', got: '## Review'
 
   REFUSES APPROVED that contradicts a FAIL
-    in  : /tmp/tmp2l0218_5/e.md
+    in  : /tmp/tmplamd1cli/e.md
     exit: 2   (expected 2)   PASS
     stderr: Blocked: Verdict is APPROVED but these dimensions are FAIL: soundness
 
   REFUSES CHANGES REQUESTED with all PASS
-    in  : /tmp/tmp2l0218_5/f.md
+    in  : /tmp/tmplamd1cli/f.md
     exit: 2   (expected 2)   PASS
     stderr: Blocked: Verdict is CHANGES REQUESTED but all dimensions are PASS — contradiction
 
   REFUSES a missing dimension
-    in  : /tmp/tmp2l0218_5/g.md
+    in  : /tmp/tmplamd1cli/g.md
     exit: 2   (expected 2)   PASS
     stderr: Blocked: Missing scored dimensions: over-reach
 

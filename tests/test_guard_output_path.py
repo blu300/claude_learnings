@@ -6,45 +6,51 @@ from pathlib import Path
 SCRIPT = str(Path(__file__).resolve().parent.parent / "scripts" / "guard_output_path.py")
 
 
-def run_guard(tool_input_path, *args, cwd=None):
+def run_guard(tool_input_path, *args, cwd):
+    """Run the guard. cwd is required: the guard reads docs/.current_iteration
+    relative to it, so a test that inherits the repo root would pick up a real
+    cursor file left behind by a pipeline run and fail for unrelated reasons."""
     input_json = json.dumps({"tool_input": {"file_path": tool_input_path}})
     return subprocess.run(
         [sys.executable, SCRIPT, *args],
         input=input_json, capture_output=True, text=True,
-        cwd=cwd or "."
+        cwd=str(cwd)
     )
 
 
-def test_multiple_filenames_first_matches():
-    r = run_guard("docs/2/definition.md", "definition.md", "dispositions.md")
+def test_multiple_filenames_first_matches(tmp_path):
+    r = run_guard("docs/2/definition.md", "definition.md", "dispositions.md", cwd=tmp_path)
     assert r.returncode == 0
 
 
-def test_multiple_filenames_second_matches():
-    r = run_guard("docs/2/dispositions.md", "definition.md", "dispositions.md")
+def test_multiple_filenames_second_matches(tmp_path):
+    r = run_guard("docs/2/dispositions.md", "definition.md", "dispositions.md", cwd=tmp_path)
     assert r.returncode == 0
 
 
-def test_multiple_filenames_none_match():
-    r = run_guard("docs/2/review.md", "definition.md", "dispositions.md")
+def test_multiple_filenames_none_match(tmp_path):
+    r = run_guard("docs/2/review.md", "definition.md", "dispositions.md", cwd=tmp_path)
     assert r.returncode == 2
+    # Must be refused for the FILENAME, not because of an iteration mismatch —
+    # there is no cursor file here, so only the filename rule can fire.
+    assert "review.md" in r.stderr
 
 
 def test_iteration_scoping_correct(tmp_path):
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / ".current_iteration").write_text("3")
-    r = run_guard("docs/3/review.md", "review.md", cwd=str(tmp_path))
+    r = run_guard("docs/3/review.md", "review.md", cwd=tmp_path)
     assert r.returncode == 0
 
 
 def test_iteration_scoping_wrong_number(tmp_path):
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / ".current_iteration").write_text("3")
-    r = run_guard("docs/1/review.md", "review.md", cwd=str(tmp_path))
+    r = run_guard("docs/1/review.md", "review.md", cwd=tmp_path)
     assert r.returncode == 2
     assert "iteration" in r.stderr.lower()
 
 
 def test_no_iteration_file_allows_any(tmp_path):
-    r = run_guard("docs/5/review.md", "review.md", cwd=str(tmp_path))
+    r = run_guard("docs/5/review.md", "review.md", cwd=tmp_path)
     assert r.returncode == 0
