@@ -16,8 +16,8 @@ ends in docs/1/clarification.md is refused.
 
 KNOWN LIMIT: this guard watches the Write and Edit tools. The orchestrator is
 a skill running in the main session, which also has Bash — a route this guard
-does not see. That gap is documented, deliberately unfixed, and explained in
-`coordinator guards.md` and docs/hardening.md.
+does not see. That gap is documented and deliberately kept; see "The
+coordinator's shell" in docs/learning/GUIDE.md.
 """
 
 import json

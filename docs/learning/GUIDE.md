@@ -397,8 +397,8 @@ structural guard, fail-closed is correct.
 
 Note also its **known limit**: it watches Write and Edit, and the
 orchestrator — a skill in the main session — also has a shell the guard does
-not see. That gap is documented and deliberately kept; `coordinator guards.md`
-is the analysis and `docs/hardening.md` records the decision.
+not see. That gap is deliberate and has its own section:
+[The coordinator's shell](#the-coordinators-shell--a-gap-kept-on-purpose).
 
 ### `warn_paste_in_prompt.py` — PreToolUse on `Agent`, warn-only
 
@@ -643,10 +643,7 @@ Stated plainly in the spec, and worth keeping in view:
   directly into the file — is outside the pipeline's scope.
 - **The orchestrator's shell.** Its write guard watches Write and Edit; as a
   skill in the main session it also has Bash, which the guard does not see.
-  The full analysis is in `coordinator guards.md`, and the decision to keep
-  the coordinator a skill anyway — this is a learning repo, and the failure
-  the guard exists for is drift, not evasion — is recorded in
-  `docs/hardening.md`.
+  This one gets its own section below — it is the best exhibit in the repo.
 - **`memory: project` needs auto memory on.** Three agents declare it, and in
   testing it appeared inert — the docs explain why: the `memory` field only
   takes effect when Claude Code's auto memory is enabled; with it off, the
@@ -656,6 +653,61 @@ Stated plainly in the spec, and worth keeping in view:
 
 Knowing what your guardrails *don't* catch is as important as knowing what they
 do.
+
+### The coordinator's shell — a gap kept on purpose
+
+The coordinator must not write the design, and a guard enforces that — on the
+Write and Edit tools. But the coordinator is a *skill* running in the main
+session, and the main session has a shell. This goes around the guard
+entirely:
+
+```
+Write to docs/1/definition.md          -> blocked
+echo "..." > docs/1/definition.md      -> allowed, silently
+```
+
+Same outcome, different route, no guard on the second route. And a skill's
+`allowed-tools` cannot close it: that field *pre-approves* tools so they
+don't prompt — it never removes one. The four specialists don't have this
+gap because an agent's `tools:` list is a hard restriction and theirs
+contains no shell. **The gap is what happens when a restriction that works
+for agents is assumed to work for a skill.**
+
+How serious it is depends on who is watching. With a human present, an
+unexpected shell command hits the permission prompt — the permission system
+covers for the guard (the hardening pass removed the `Bash(echo *)`
+pre-approval that would have let an `echo` write through silently). Run
+unattended, the guard is the only thing standing there, and it isn't looking
+at the shell.
+
+**The proper fix exists and was deliberately not done.** Move the
+coordinator into `.claude/agents/coordinator.md` with a tool list and no
+shell in it — no second route to close, because there is no second route.
+The platform supports it: subagents can spawn subagents (three layers deep
+by default — a default that has churned across CLI versions), can be resumed
+with context intact, and can even be granted `AskUserQuestion` to talk to
+the human directly. The price is the shape of the repo: a fifth agent, the
+skill reduced to a relay stub (which still has the shell), and this guide's
+clearest teaching contrast — agent `tools:` restricts, skill `allowed-tools`
+merely pre-approves — reduced to a footnote.
+
+Kept as a skill, for three reasons:
+
+1. **This is a learning repo**, and the gap is its best exhibit of a
+   transferable lesson: a guard that watches routes is always one trick
+   behind; take the capability away instead. Fixing it would remove the
+   exhibit. An honest, loudly documented limit teaches more than the fix.
+2. **The guard covers the failure it exists for.** The threat is *drift* — a
+   coordinator that forgets the rule and reaches for the normal write tool
+   gets blocked. Evading it takes a deliberately odd way of writing a file,
+   which is not what drifting looks like.
+3. **A bypass can't hide from the record.** The audit log means a transcript
+   that claims a block happened while `docs/hook-audit.log` shows nothing is
+   lying — dodging the guard cannot forge the log's silence.
+
+If this pipeline were ever to run unattended, with the blinding rule
+required to be *true* rather than true-under-supervision, the
+coordinator-as-agent redesign is the one change to make first.
 
 ---
 

@@ -51,7 +51,7 @@ refuse everything else with **exit 2** — the design, the cursor file (which
 `iteration.py` owns now), a `clarification.md` outside `docs/1`, and a
 lookalike path outside the project. This is why the orchestrator can be
 trusted not to write the design with its file tools: it *can't*. (Its shell
-is another matter — see `coordinator guards.md`.)
+is another matter — see "The coordinator's shell" in `GUIDE.md`.)
 
 **2. `guard_output_path.py`** — one guard, four agents, anchored and scoped.
 The allowed filenames arrive as CLI arguments, which is how a single script
@@ -276,6 +276,12 @@ Be clear about the limits of the walkthrough above, because they are real:
   rejected remedy became moot when the designer deleted the component it
   attached to. A cleaner test needs a finding rejected while the component
   survives.
+- **The recorded run predates the hardening pass.** The same-folder redo of a
+  `QUESTIONS` round, the in-script iteration cap, the script-owned cursor and
+  the audit log have all been proven at the script layer but not yet observed
+  in a live pipeline run — the run under `docs/1`–`docs/4` never hit a
+  `QUESTIONS` verdict at all. The live-fire test in `LLM as judge.md` is how
+  to close that gap.
 
 ---
 
@@ -306,8 +312,8 @@ though the hooks were not there — check these before debugging any script:
 rm -rf docs/1 docs/2 docs/3 docs/4 docs/.current_iteration docs/hook-audit.log my-brief.md
 ```
 
-Keep `docs/GUIDE.md`, `docs/VERIFY.md` and `docs/superpowers/` — and keep
-`brief.md` at the repo root: it is the committed input of the recorded run.
+Keep `docs/learning/` and `docs/superpowers/` — and keep `brief.md` at the
+repo root: it is the committed input of the recorded run.
 
 `docs/.current_iteration` is gitignored — it is a runtime cursor, not an
 artifact.
