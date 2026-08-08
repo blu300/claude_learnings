@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-"""Block an agent from writing anywhere except its own output file.
+"""Block an agent from writing anywhere except its allowed output file(s).
 
-Claude Code runs this before a Write or Edit call and hands it the tool call
-as JSON on standard input; the path being written sits at
-`tool_input.file_path`. Exiting 0 lets the write through. Exiting 2 blocks it
-and shows whatever this script printed to standard error to the agent, so the
-agent learns why it was stopped and can correct itself.
+Usage:
+    guard_output_path.py <filename> [filename2 ...]
 
-The single argument is the filename this agent is allowed to write. A path
-passes only if it looks like docs/<number>/<that filename>.
+Reads docs/.current_iteration to scope writes to the active iteration.
+If that file does not exist, any iteration number is accepted.
 
 Example:
 
@@ -26,45 +23,51 @@ Example:
 
 import json
 import sys
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 ALLOW = 0
 BLOCK = 2
+CURRENT_ITERATION_FILE = Path("docs/.current_iteration")
 
 
-def is_allowed(path: str, filename: str) -> bool:
-    """Return True if `path` is docs/<number>/<filename>.
+def get_current_iteration() -> "str | None":
+    if CURRENT_ITERATION_FILE.exists():
+        return CURRENT_ITERATION_FILE.read_text().strip()
+    return None
 
-    Backslashes are treated as separators so Windows paths behave the same.
+
+def is_allowed(path: str, filenames: list, required_iteration: "str | None") -> bool:
+    """Return True if path matches docs/<number>/<one-of-filenames>.
+
+    When required_iteration is set, the number must match exactly.
 
     Example:
-        is_allowed("docs/3/review.md", "review.md")        -> True
-        is_allowed(r"docs\3\review.md", "review.md")       -> True
-        is_allowed("/repo/docs/3/review.md", "review.md")  -> True
-        is_allowed("docs/review.md", "review.md")          -> False
-        is_allowed("docs/3/definition.md", "review.md")    -> False
-        is_allowed("notes/3/review.md", "review.md")       -> False
+        is_allowed("docs/3/review.md", ["review.md"], None)      -> True
+        is_allowed("docs/3/review.md", ["review.md"], "3")       -> True
+        is_allowed("docs/1/review.md", ["review.md"], "3")       -> False
+        is_allowed("docs/3/def.md", ["def.md", "disp.md"], "3")  -> True
     """
     parts = PurePosixPath(path.replace("\\", "/"))
-    return (
-        parts.name == filename
-        and parts.parent.name.isdigit()
-        and parts.parent.parent.name == "docs"
-    )
+    if parts.name not in filenames:
+        return False
+    if not parts.parent.name.isdigit():
+        return False
+    if parts.parent.parent.name != "docs":
+        return False
+    if required_iteration and parts.parent.name != required_iteration:
+        return False
+    return True
 
 
-def main(argv: list[str]) -> int:
-    """Read the tool call from standard input and decide whether to allow it.
-
-    Example:
-        stdin '{"tool_input": {"file_path": "docs/1/review.md"}}', argv review.md -> 0
-        stdin 'not json',                                          argv review.md -> 2
-    """
+def main(argv: list) -> int:
     if len(argv) < 2:
         print("guard_output_path.py: no allowed filename given", file=sys.stderr)
         return BLOCK
 
-    filename = argv[1]
+    filenames = [a for a in argv[1:] if not a.startswith("-")]
+    if not filenames:
+        print("guard_output_path.py: no allowed filename given", file=sys.stderr)
+        return BLOCK
 
     try:
         call = json.load(sys.stdin)
@@ -77,11 +80,15 @@ def main(argv: list[str]) -> int:
         )
         return BLOCK
 
-    if is_allowed(path, filename):
+    required_iteration = get_current_iteration()
+
+    if is_allowed(path, filenames, required_iteration):
         return ALLOW
 
+    iteration_msg = f" in iteration {required_iteration}" if required_iteration else ""
+    allowed_msg = " or ".join(filenames)
     print(
-        f"Blocked: this agent may only write docs/<n>/{filename}. "
+        f"Blocked: this agent may only write docs/<n>/{allowed_msg}{iteration_msg}. "
         f"Refused: {path}",
         file=sys.stderr,
     )
