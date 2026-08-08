@@ -1,1 +1,8 @@
 .superpowers/
+__pycache__/
+*.pyc
+
+# Runtime cursor written by the orchestrator before each delegation so the
+# write guards can scope by iteration. Transient coordination state, not an
+# artifact of a run — it changes on every pipeline step.
+docs/.current_iteration
