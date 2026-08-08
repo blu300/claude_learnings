@@ -3,7 +3,7 @@ name: design-cycle
 description: Runs the clarify, design, review and backlog pipeline. Takes a brief, questions it, loops design and review until the review is clean, then produces a backlog.
 argument-hint: [path-to-brief]
 disable-model-invocation: true
-allowed-tools: Bash(python3 scripts/iteration.py *) Bash(echo *) Read Edit
+allowed-tools: Bash(python3 scripts/iteration.py *) Read Edit
 hooks:
   PreToolUse:
     - matcher: "Write|Edit"
@@ -22,9 +22,10 @@ hooks:
 
 # Design cycle
 
-You are the orchestrator. You run in the main session so that you can put
-questions to the human; delegated agents cannot ask questions, they can only
-write them to a file for you to relay.
+You are the orchestrator. You run in the main session and you are the one
+who talks to the human. The specialist agents have no question-asking tool —
+deliberately, so that every question travels through a file for you to relay
+and the whole exchange stays on the record.
 
 Brief: $ARGUMENTS
 
@@ -38,9 +39,10 @@ Brief: $ARGUMENTS
   The agents read and write files themselves; you route paths between them.
 - Never write `definition.md`, `review.md` or `backlog.md` — those belong to
   the agents. The only files you write are the **Answers** section of
-  `clarification.md`, `docs/1/brief-snapshot.md`, and
-  `docs/.current_iteration`. A hook enforces this; anything else is refused.
-  If an agent fails to write its file, report the failure and stop.
+  `docs/1/clarification.md` and `docs/1/brief-snapshot.md`. A hook enforces
+  this; anything else is refused. (`docs/.current_iteration` is written by
+  `scripts/iteration.py` itself — you never touch it.) If an agent fails to
+  write its file, report the failure and stop.
 - Keep your own reading to a minimum. You may read exactly these: the
   questions from `clarification.md`, `dispositions.md`, and the `Verdict:`
   line plus any `Questions for human` section from each `review.md`. You
@@ -49,30 +51,28 @@ Brief: $ARGUMENTS
 - `clarification.md` lives in `docs/1` only, and is carried forward to every
   later iteration. It is the single record of everything the human has told
   you.
-- Stop after 4 design iterations even if the review is still not clean.
+- The iteration cap is 4, and it lives in `scripts/iteration.py` itself —
+  when `next` refuses to create a folder, the run is over. Stop and report.
 
 ## Procedure
 
 ### Clarify
 
 1. Create the first iteration folder:
-   `python3 scripts/iteration.py next --max 4` — it prints the folder path,
-   e.g. `docs/1`. The `--max 4` gate makes the iteration cap a hard stop the
-   orchestrator cannot override: once four folders exist, the command exits
-   non-zero instead of creating a fifth. Call this folder `<dir>`, and
-   remember `<dir>/clarification.md` as the clarification path for the whole
-   run.
+   `python3 scripts/iteration.py next` — it prints the folder path, e.g.
+   `docs/1`. The iteration cap (4) is built into the script: once four
+   folders exist, the command exits non-zero instead of creating a fifth,
+   and you cannot raise the cap from the command line. The script also
+   records the new folder in `docs/.current_iteration`, which is how the
+   write guards know which round is active — you never write that file.
+   Call this folder `<dir>`, and remember `<dir>/clarification.md` as the
+   clarification path for the whole run.
 
    After creating `docs/1`, copy the brief to `docs/1/brief-snapshot.md`.
    From this point forward, "the brief" means the snapshot path, not the
    original — every agent receives the snapshot. This freezes the brief at
    the moment the pipeline started, so a later edit to the original file
    cannot silently change what the agents were working from mid-run.
-
-   Before each delegation, record which iteration is active so the write
-   guards can scope their checks: `echo <n> > docs/.current_iteration`
-   (where `<n>` is the current folder number). Do this every time you set or
-   change `<dir>`.
 
 2. Delegate to the `clarifier` agent. Give it the brief path and tell it to
    write `<dir>/clarification.md`.
@@ -115,12 +115,16 @@ Brief: $ARGUMENTS
 
    - **`Verdict: QUESTIONS`** — stop the loop. Put the questions to the human,
      in the reviewer's own words, and wait. When they reply, append the
-     answers to the **Answers** section of the clarification file, then create
-     the next folder, set `<dir>` to it, and go to step 5.
+     answers to the **Answers** section of the clarification file, then go
+     back to step 5 **in the same folder** — do not create a new one. The
+     design was not judged wrong; it could not be judged at all, so the round
+     is redone in place with the new answers rather than spending one of the
+     four iterations. The designer and reviewer overwrite their files in
+     `<dir>` (the questions themselves live on in the clarification file).
 
    - **`Verdict: CHANGES REQUESTED`** — create the next folder with
-     `python3 scripts/iteration.py next --max 4`, set `<dir>` to it, and go
-     back to step 5, passing the previous iteration's `review.md` path. If the
+     `python3 scripts/iteration.py next`, set `<dir>` to it, and go back to
+     step 5, passing the previous iteration's `review.md` path. If the
      command exits non-zero, the cap is reached: stop and report the design
      did not converge within four iterations.
 
