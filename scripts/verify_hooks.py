@@ -17,6 +17,7 @@ builds them in a temporary directory that is removed afterwards.
 """
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -25,6 +26,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "scripts"
+
+# Every case runs against a throwaway directory pinned as CLAUDE_PROJECT_DIR,
+# the same way the hook harness pins the real project root. Pinning it keeps
+# the guards anchored where each case expects, and keeps their audit log out
+# of the real docs/.
+DEFAULT_SCOPE = Path(tempfile.mkdtemp())
 
 BOLD, DIM, RESET = "\033[1m", "\033[2m", "\033[0m"
 GREEN, RED, YELLOW = "\033[32m", "\033[31m", "\033[33m"
@@ -42,12 +49,14 @@ def banner(title, subtitle=""):
 
 def run_hook(script, payload, cwd=None, args=()):
     """Pipe a tool call to a hook exactly as the harness would."""
+    workdir = Path(cwd) if cwd else DEFAULT_SCOPE
     proc = subprocess.run(
         [sys.executable, str(SCRIPTS / script), *args],
         input=json.dumps(payload),
         capture_output=True,
         text=True,
-        cwd=str(cwd) if cwd else None,
+        cwd=str(workdir),
+        env={**os.environ, "CLAUDE_PROJECT_DIR": str(workdir)},
     )
     return proc
 
@@ -99,21 +108,29 @@ def case(label, script, payload, expect_exit, *, cwd=None, args=(),
 banner(
     "1. guard_orchestrator_write.py",
     "PreToolUse on Write|Edit. Structural rule -> hard-blocks with exit 2.\n"
-    "Enforces the blinding rule: the orchestrator writes 3 files and no others.",
+    "Enforces the blinding rule: the orchestrator writes 2 files, both in\n"
+    "docs/1, and nothing else. Paths are anchored to the project root.",
 )
 
-case("allows clarification.md", "guard_orchestrator_write.py",
-     {"tool_input": {"file_path": "docs/2/clarification.md"}}, 0)
+case("allows clarification.md in docs/1", "guard_orchestrator_write.py",
+     {"tool_input": {"file_path": "docs/1/clarification.md"}}, 0)
 case("allows the brief snapshot", "guard_orchestrator_write.py",
      {"tool_input": {"file_path": "docs/1/brief-snapshot.md"}}, 0)
-case("allows the iteration cursor", "guard_orchestrator_write.py",
-     {"tool_input": {"file_path": "docs/.current_iteration"}}, 0)
+case("REFUSES clarification.md outside docs/1", "guard_orchestrator_write.py",
+     {"tool_input": {"file_path": "docs/2/clarification.md"}}, 2)
+case("REFUSES the iteration cursor (iteration.py owns it)", "guard_orchestrator_write.py",
+     {"tool_input": {"file_path": "docs/.current_iteration"}}, 2)
 case("REFUSES the design", "guard_orchestrator_write.py",
      {"tool_input": {"file_path": "docs/2/definition.md"}}, 2)
 case("REFUSES the review", "guard_orchestrator_write.py",
      {"tool_input": {"file_path": "docs/2/review.md"}}, 2)
 case("REFUSES arbitrary source files", "guard_orchestrator_write.py",
      {"tool_input": {"file_path": "src/main.py"}}, 2)
+
+lookalike_root = Path(tempfile.mkdtemp())
+case("REFUSES a lookalike path outside the project", "guard_orchestrator_write.py",
+     {"tool_input": {"file_path": str(lookalike_root / "docs" / "1" / "clarification.md")}}, 2)
+shutil.rmtree(lookalike_root, ignore_errors=True)
 
 # ---------------------------------------------------------------------------
 # 2. guard_output_path.py — PreToolUse, hard-block, iteration-scoped
@@ -122,7 +139,9 @@ case("REFUSES arbitrary source files", "guard_orchestrator_write.py",
 banner(
     "2. guard_output_path.py",
     "PreToolUse on Write|Edit. Takes allowed filenames as CLI args, so one\n"
-    "generic guard serves all four agents. Also scopes to the CURRENT iteration.",
+    "generic guard serves all four agents. Scopes to the CURRENT iteration,\n"
+    "and anchors to the project root — a path merely ENDING in docs/<n>/<file>\n"
+    "is not enough.",
 )
 
 scope = Path(tempfile.mkdtemp())
@@ -144,6 +163,30 @@ case("REFUSES a PREVIOUS iteration (no clobbering)", "guard_output_path.py",
 case("REFUSES another agent's file", "guard_output_path.py",
      {"tool_input": {"file_path": "docs/2/review.md"}}, 2,
      cwd=scope, args=("definition.md", "dispositions.md"))
+
+evil_root = Path(tempfile.mkdtemp())
+case("REFUSES a lookalike tree outside the project", "guard_output_path.py",
+     {"tool_input": {"file_path": str(evil_root / "docs" / "2" / "definition.md")}}, 2,
+     cwd=scope, args=("definition.md", "dispositions.md"))
+shutil.rmtree(evil_root, ignore_errors=True)
+
+case("REFUSES unknown options rather than guessing", "guard_output_path.py",
+     {"tool_input": {"file_path": "docs/2/definition.md"}}, 2,
+     cwd=scope, args=("--iteration", "2", "definition.md"))
+
+# The guards keep their own mechanical record — the audit log. Every decision
+# above appended a line to docs/hook-audit.log inside the temp scope. The
+# live-fire test cross-checks quoted evidence against exactly this file.
+audit_log = scope / "docs" / "hook-audit.log"
+audit_lines = audit_log.read_text().strip().splitlines() if audit_log.exists() else []
+audit_ok = any(" block " in line for line in audit_lines) and any(
+    " allow " in line for line in audit_lines)
+results.append(audit_ok)
+verdict = f"{GREEN}PASS{RESET}" if audit_ok else f"{RED}FAIL{RESET}"
+print(f"\n  {BOLD}every decision above was appended to docs/hook-audit.log{RESET}")
+for line in audit_lines[-3:]:
+    print(f"    {DIM}{line}{RESET}")
+print(f"    {DIM}log :{RESET} {len(audit_lines)} lines, allow and block both present   {verdict}")
 
 shutil.rmtree(scope, ignore_errors=True)
 
@@ -278,9 +321,11 @@ shutil.rmtree(tmp, ignore_errors=True)
 # ---------------------------------------------------------------------------
 
 banner(
-    "7. iteration.py next --max 4",
-    "Not a hook -- a gate. Converts the prose rule 'stop after 4 iterations'\n"
-    "into something the orchestrator cannot override: there is no 5th folder.",
+    "7. iteration.py next — the cap lives in the script",
+    "Not a hook -- a gate. The 4-iteration cap is a constant in iteration.py:\n"
+    "no flag is needed to arm it, and --max can lower it but never raise it.\n"
+    "The script also records each new folder in docs/.current_iteration, so\n"
+    "the guards' cursor can never be forgotten or out of step.",
 )
 
 tmp = Path(tempfile.mkdtemp())
@@ -289,7 +334,7 @@ shutil.copy(SCRIPTS / "iteration.py", tmp / "scripts" / "iteration.py")
 
 for i in range(1, 6):
     proc = subprocess.run(
-        [sys.executable, "scripts/iteration.py", "next", "--max", "4"],
+        [sys.executable, "scripts/iteration.py", "next"],
         capture_output=True, text=True, cwd=str(tmp),
     )
     expected = 0 if i <= 4 else 1
@@ -299,15 +344,34 @@ for i in range(1, 6):
     msg = (proc.stdout or proc.stderr).strip()
     print(f"    call {i}: exit={proc.returncode} (expected {expected}) {verdict}  {DIM}{msg}{RESET}")
 
-created = sorted(p.name for p in (tmp / "docs").iterdir())
+created = sorted(p.name for p in (tmp / "docs").iterdir() if p.is_dir())
 no_fifth = "5" not in created
 results.append(no_fifth)
 print(f"\n    folders created: {created}   "
       f"{GREEN + 'PASS' + RESET if no_fifth else RED + 'FAIL' + RESET} (no 5th folder)")
 
+cursor = (tmp / "docs" / ".current_iteration").read_text().strip()
+cursor_ok = cursor == "4"
+results.append(cursor_ok)
+print(f"    docs/.current_iteration: {cursor!r}   "
+      f"{GREEN + 'PASS' + RESET if cursor_ok else RED + 'FAIL' + RESET} "
+      f"(cursor tracks the newest folder)")
+
+proc = subprocess.run(
+    [sys.executable, "scripts/iteration.py", "next", "--max", "99"],
+    capture_output=True, text=True, cwd=str(tmp),
+)
+raise_ok = proc.returncode == 1
+results.append(raise_ok)
+print(f"    next --max 99: exit={proc.returncode} (expected 1) "
+      f"{GREEN + 'PASS' + RESET if raise_ok else RED + 'FAIL' + RESET} "
+      f"(--max cannot raise the cap)")
+
 shutil.rmtree(tmp, ignore_errors=True)
 
 # ---------------------------------------------------------------------------
+
+shutil.rmtree(DEFAULT_SCOPE, ignore_errors=True)
 
 banner("SUMMARY")
 passed, total = sum(results), len(results)
