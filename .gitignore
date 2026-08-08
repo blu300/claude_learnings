@@ -10,3 +10,6 @@ docs/.current_iteration
 # Mechanical record of hook decisions (see scripts/hook_audit.py). Runtime
 # evidence for the live-fire test, not an artifact of a run.
 docs/hook-audit.log
+
+# pytest cache
+.pytest_cache/
