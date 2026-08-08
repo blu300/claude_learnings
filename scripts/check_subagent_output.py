@@ -42,6 +42,8 @@ import json
 import sys
 from pathlib import Path
 
+import hook_audit
+
 
 def find_current_folder() -> Path | None:
     """The orchestrator writes the active iteration number to
@@ -73,12 +75,15 @@ def main() -> int:
 
     wrote_something = any(folder.glob("*.md"))
     if wrote_something:
+        hook_audit.record("check_subagent_output", "allow", str(folder))
         return 0
 
     # The agent finished but left the iteration folder empty. Keep it running
     # and instruct it to write its file. The reason goes to the SUBAGENT, so
     # it is phrased as an instruction to that agent — not as a report to the
     # orchestrator, which never sees this.
+    hook_audit.record("check_subagent_output", "block",
+                      f"{folder} empty at SubagentStop")
     print(json.dumps({
         "decision": "block",
         "reason": (

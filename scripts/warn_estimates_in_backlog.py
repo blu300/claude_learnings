@@ -30,6 +30,8 @@ import re
 import sys
 from pathlib import Path
 
+import hook_audit
+
 ESTIMATE_PATTERNS = [
     r"\b\d+\s*(hours?|days?|weeks?|points?|sp)\b",
     r"\b(estimate|effort|sizing)\b",
@@ -56,6 +58,7 @@ def main() -> int:
 
     if findings:
         sample = ", ".join(str(f) for f in findings[:5])
+        hook_audit.record("warn_estimates_in_backlog", "warn", path)
         print(json.dumps({
             "systemMessage": (
                 f"Warning: backlog appears to contain effort estimates "

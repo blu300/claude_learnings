@@ -30,6 +30,8 @@ import json
 import re
 import sys
 
+import hook_audit
+
 
 def main() -> int:
     try:
@@ -52,6 +54,8 @@ def main() -> int:
 
     if warnings:
         detail = " ".join(warnings)
+        hook_audit.record("warn_paste_in_prompt", "warn",
+                          f"prompt of {len(prompt)} chars")
         print(json.dumps({
             "systemMessage": f"Warning: {detail}",
             "hookSpecificOutput": {

@@ -32,6 +32,8 @@ import re
 import sys
 from pathlib import Path
 
+import hook_audit
+
 ALLOW = 0
 BLOCK = 2
 VALID_VERDICTS = {"APPROVED", "CHANGES REQUESTED", "QUESTIONS"}
@@ -98,9 +100,11 @@ def main() -> int:
 
     error = validate(content)
     if error:
+        hook_audit.record("validate_review_format", "block", f"{path}: {error}")
         print(f"Blocked: {error}", file=sys.stderr)
         return BLOCK
 
+    hook_audit.record("validate_review_format", "allow", path)
     return ALLOW
 
 
