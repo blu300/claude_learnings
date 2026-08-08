@@ -1,7 +1,9 @@
 # The coordinator's guard has a gap
 
-Found while writing `LLM as judge.md`. Not fixed. Written down so it is a
-decision rather than an oversight.
+Found while writing `LLM as judge.md`. Deliberately not fixed — written down
+so it is a decision rather than an oversight. A later hardening pass
+(`docs/hardening.md`) narrowed the gap and recorded the decision formally;
+notes below mark what changed.
 
 ---
 
@@ -21,13 +23,14 @@ away from the design document, so that it cannot start having opinions about a
 design it is supposed to be routing rather than judging.
 
 `scripts/guard_orchestrator_write.py` enforces that. The coordinator may write
-exactly three files:
+exactly two files:
 
-- the answers into `clarification.md`
+- the answers into `docs/1/clarification.md`
 - `docs/1/brief-snapshot.md` (the frozen copy of your brief)
-- `docs/.current_iteration` (which round is active)
 
-Anything else is refused.
+Anything else is refused. (It used to be three — `docs/.current_iteration` —
+until the hardening pass moved the cursor into `iteration.py` itself, which
+also removed the coordinator's `echo` privileges.)
 
 ## Why it doesn't hold
 
@@ -74,6 +77,13 @@ cannot call anything outside it, whatever its prompt says. So there is no
 second route for an agent to take. Their guard only needs to cover the two
 tools they actually have.
 
+*(Correction from the hardening pass: "fine" was overstated when this was
+first written. The agents had no second **tool**, but the guard on the tool
+they do have had its own hole — it checked only how a path ended, so a
+Write to `/tmp/anywhere/docs/2/review.md` passed. The guards are now
+anchored to the project root. Different gap, same lesson: ask what else
+reaches the same outcome, including other paths through the watched tool.)*
+
 The coordinator is different because it is a *skill*, and a skill's
 `allowed-tools:` does not restrict anything. It pre-approves tools so they
 don't prompt; it does not take any tool away. The coordinator therefore has
@@ -94,20 +104,21 @@ permission system covers for the guard.
 standing there, and it isn't looking at the shell. This is the case the guards
 exist for.
 
-**One thing that needs checking.** The skill pre-approves two shell commands so
-they don't prompt:
+**One thing that needed checking — now moot for this pipeline.** The skill
+used to pre-approve two shell commands so they don't prompt:
 
 ```
 allowed-tools: Bash(python3 scripts/iteration.py *) Bash(echo *)
 ```
 
-`Bash(echo *)` may well match `echo "..." > docs/1/definition.md`, since that
-is still an `echo` command. If it does, the coordinator can write any file with
-**no guard and no permission prompt**, even with a human sitting there.
-
-I have not tested this. It is a reasonable reading of how the matching works,
-not an observed fact. It should be one of the first things the live-fire test
-checks.
+`Bash(echo *)` may well have matched `echo "..." > docs/1/definition.md`,
+since that is still an `echo` command — which would have meant the
+coordinator could write any file with **no guard and no permission prompt**,
+even with a human sitting there. The hardening pass removed the grant
+entirely (the cursor it existed for is now written by `iteration.py`), so an
+unexpected shell write once again hits the permission prompt. The question of
+how `Bash(...)` patterns treat redirects remains a good one to test, but
+nothing here depends on the answer any more.
 
 ## What would fix it
 
@@ -115,14 +126,19 @@ Roughly in order of effort:
 
 1. **Say so in the guide.** Write down that the blinding rule covers the normal
    write tools and not the shell. Costs nothing, and an honest limit beats a
-   guarantee that isn't true.
+   guarantee that isn't true. *(Done — the guide, the README and the guard's
+   own docstring now state the limit.)*
 2. **Narrow the pre-approval.** Drop `Bash(echo *)` — it exists for convenience
-   and it is the widest thing in the list.
+   and it is the widest thing in the list. *(Done, and better than planned:
+   the cursor it existed for moved into `iteration.py`, so nothing was lost.)*
 3. **Cover the shell in the guard.** Add `Bash` to what the rule watches and
    have the script inspect the command for redirects into files it protects.
    Real work, and never airtight — there are many ways to write a file from a
-   shell, and a guard that lists them is always one trick behind.
+   shell, and a guard that lists them is always one trick behind. *(Rejected —
+   see docs/hardening.md.)*
 4. **Make the coordinator an agent.** The proper fix. Its own section below.
+   *(Considered and deliberately not done — the decision and its reasoning
+   are recorded in docs/hardening.md.)*
 
 Options 1 and 2 are cheap and honest. Option 3 patches the symptom. Option 4
 removes the cause.
@@ -147,17 +163,24 @@ the coordinator can actually do, and the blinding rule finally holds.
 
 ### "But agents can't talk to the human"
 
-This is the objection that makes people drop the idea, and it does not survive
-contact with the rest of the design.
+This is the objection that makes people drop the idea, and it fails twice
+over.
 
-It is true that Claude Code strips the ask-the-user tool from every subagent,
-even when the agent's `tools:` field lists it. An agent cannot put a question to
-you directly.
+First, it is out of date. When this document was first written it claimed
+Claude Code strips the ask-the-user tool from every subagent. That is no
+longer true: current Claude Code lets a subagent use `AskUserQuestion`, with
+the prompt surfacing in the main session
+([tools reference](https://code.claude.com/docs/en/tools-reference)). A
+coordinator-agent could simply be granted that tool and ask you directly —
+which makes option 4 *cheaper* than this document originally estimated, not
+more expensive.
 
-But **no agent in this pipeline ever does.** The clarifier does not ask you
-anything — it writes its questions to a file and stops. Something else reads
-that file and puts the questions to you. Passing questions through a file is
-not a workaround for agents; it is how the whole system already works.
+Second, even without that tool, **no agent in this pipeline ever asks
+directly.** The clarifier does not ask you anything — it writes its questions
+to a file and stops. Something else reads that file and puts the questions to
+you. Passing questions through a file is not a workaround for agents; it is
+how the whole system already works (and this pipeline keeps it deliberately,
+because the file is a durable record of every answer).
 
 So a coordinator-agent gets questions to you exactly the way the clarifier
 does:
@@ -183,19 +206,25 @@ reason to write anything.
 
 ### What it costs
 
-Not free, and worth being honest about:
+Not free, and worth being honest about — though two of these turned out
+smaller than first written:
 
-- **A restart per exchange.** An agent finishes when it reports. Every question
-  ends the coordinator-agent and starts it again. More round trips, more
-  tokens.
+- **A restart per exchange** — *smaller than it looks.* An agent finishes when
+  it reports, but Claude Code can resume a subagent with its context intact
+  ([sub-agents reference](https://code.claude.com/docs/en/sub-agents)), the
+  same mechanism this pipeline already uses to resume the designer. And if
+  the coordinator-agent is granted `AskUserQuestion` (above), most exchanges
+  never end it at all.
 - **The session still needs instructions.** Something has to tell it to relay
   rather than improvise, so a thin skill remains. Much smaller, but not zero —
   and it still has shell access. The gap narrows a great deal; it does not
   vanish.
-- **Nesting.** The coordinator-agent would spawn the other four. Agents can
-  spawn agents up to a depth limit and this sits inside it, but **this has not
-  been tested here.** Treat it as the first thing to check before committing to
-  the redesign.
+- **Nesting** — *confirmed supported, with a version caveat.* A subagent can
+  spawn subagents up to three layers below the main conversation by default;
+  list `Agent` in the coordinator's `tools`
+  ([sub-agents reference](https://code.claude.com/docs/en/sub-agents)). The
+  default depth has churned across CLI versions (briefly 1 in v2.1.217–218),
+  so check the installed version before committing to the redesign.
 
 ### Should you do it?
 
@@ -206,6 +235,12 @@ file, which is not what drifting looks like.
 
 If the point were to run this unattended and trust the blinding rule, then yes.
 Option 4 is the only one that makes the rule true rather than mostly true.
+
+**This repo's answer: no.** The hardening pass weighed exactly this and chose
+to keep the coordinator a skill — this is a learning repo, and the redesign
+would trade its clearest teaching structure for a guarantee only unattended
+use needs. The full reasoning, and what was done instead, is in
+`docs/hardening.md`.
 
 ## The general lesson
 
