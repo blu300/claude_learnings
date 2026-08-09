@@ -256,8 +256,8 @@ Either way, report from `dispositions.md` — never from the design.
 ## Results from the recorded run
 
 A full run against a throwaway brief (a book-lending tracker) is committed
-under `docs/1/` through `docs/4/`. It **did not converge** — four iterations,
-then the cap fired.
+under `docs/example-run/` (folders `1/` through `4/`). It **did not
+converge** — four iterations, then the cap fired.
 
 That is a useful outcome, not a failed demo. What it showed:
 
@@ -274,9 +274,9 @@ the last.
 
 Two behaviours worth reading the files for:
 
-- **`docs/3/dispositions.md`** contains the deference self-check, written
-  unprompted: *"uniform agreement is the shape capitulation also takes."*
-- **`docs/4/dispositions.md`** records the designer correcting the *reviewer's*
+- **`docs/example-run/3/dispositions.md`** contains the deference self-check,
+  written unprompted: *"uniform agreement is the shape capitulation also takes."*
+- **`docs/example-run/4/dispositions.md`** records the designer correcting the *reviewer's*
   stated failure mechanism — it accepted the finding but showed the review had
   named the wrong step. Without the log, that correction would have been buried
   in a design nobody in the loop is allowed to read.
@@ -313,7 +313,7 @@ Be clear about the limits of the walkthrough above, because they are real:
 - **The recorded run predates the hardening pass.** The same-folder redo of a
   `QUESTIONS` round, the in-script iteration cap, the script-owned cursor and
   the audit log have all been proven at the script layer but not yet observed
-  in a live pipeline run — the run under `docs/1`–`docs/4` never hit a
+  in a live pipeline run — the specimen under `docs/example-run/` never hit a
   `QUESTIONS` verdict at all. The live-fire test in `LLM as judge.md` is how
   to close that gap.
 

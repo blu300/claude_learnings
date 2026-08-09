@@ -2,6 +2,11 @@
 __pycache__/
 *.pyc
 
+# Live pipeline output. Runs write docs/1 … docs/4 and those are transient
+# — read them, then clear them. The committed specimen lives outside the
+# numbered range, in docs/example-run/, so the iteration cap ignores it.
+docs/[0-9]/
+
 # Runtime cursor, written by iteration.py whenever it creates a folder, so
 # the write guards can scope by iteration. Transient coordination state, not
 # an artifact of a run — it changes on every pipeline step.

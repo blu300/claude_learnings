@@ -33,8 +33,9 @@ impressive.
 
 Runs write their output to numbered folders — `docs/1/`, `docs/2/`, … — one
 per design iteration. A real, non-converging run is committed under
-`docs/1`–`docs/4`. Everything written *about* the system lives in
-`docs/learning/`.
+`docs/example-run/` as a specimen to read (out of the numbered range, so it
+doesn't count against the iteration cap). Everything written *about* the
+system lives in `docs/learning/`.
 
 ## Try it
 
@@ -67,7 +68,7 @@ In order. Each step assumes the ones before it.
 4. **[`docs/learning/GUIDE.md`](docs/learning/GUIDE.md)** — every mechanism in
    depth, why each choice was made, the known gap that was deliberately kept,
    and the fifteen transferable lessons.
-5. **Read the recorded run** in `docs/1/` – `docs/4/`, with the "Results from
+5. **Read the recorded run** in `docs/example-run/`, with the "Results from
    the recorded run" section of
    [`docs/learning/VERIFY.md`](docs/learning/VERIFY.md) as your companion. It
    did not converge, and that outcome is worth seeing.

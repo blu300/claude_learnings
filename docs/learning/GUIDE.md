@@ -212,7 +212,7 @@ contents are simply there.
 
 This repo ran for months without one, and the gap showed in a small way: a
 fresh session opening this folder knew nothing about the pipeline until it
-stumbled into it — nothing told it that `docs/1/`–`docs/4/` are a preserved
+stumbled into it — nothing told it that `docs/example-run/` is a preserved
 specimen rather than ordinary docs, or that the iteration cursor is not its
 to write. Rules like that can't live in the skill, because sessions that
 never invoke the skill still need them.

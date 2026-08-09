@@ -35,17 +35,13 @@ message an agent would see.
 
 ## 2. Running the pipeline for real (`/design-cycle`)
 
-### Before you start — move the museum piece aside
-
-The repo ships with a completed run committed under `docs/1`–`docs/4` as
-a specimen to read. The iteration cap (4) counts *folders*, so with all
-four present a fresh run refuses at step one. Park them first:
-
-```powershell
-mkdir C:\temp\pipeline-backup -Force
-Move-Item docs\1, docs\2, docs\3, docs\4 C:\temp\pipeline-backup\
-Remove-Item docs\.current_iteration, docs\hook-audit.log -ErrorAction SilentlyContinue
-```
+(The completed run committed under `docs/example-run/` is a specimen to
+*read* — it lives outside the numbered range, so it doesn't count against
+the iteration cap and you can run the pipeline without touching it. If an
+earlier attempt left `docs/1`, `docs/2`, … or a `docs/.current_iteration`
+cursor behind, clear those first:
+`Remove-Item docs\1, docs\2, docs\3, docs\4 -Recurse -ErrorAction SilentlyContinue`
+and `Remove-Item docs\.current_iteration -ErrorAction SilentlyContinue`.)
 
 ### Run it
 
@@ -79,16 +75,18 @@ This prints every hook decision as it happens — guards allowing and
 blocking, warnings firing, the flight recorder noting each delegation.
 It is the single best way to *see* the machinery this repo teaches.
 
-### Afterwards — put the museum piece back
+### Afterwards
+
+Your run's output in `docs/1`, `docs/2`, … is transient and untracked by
+git — read it, keep it, or clear it out:
 
 ```powershell
-Move-Item C:\temp\pipeline-backup\* docs\
-git checkout -- docs/
+Remove-Item docs\1, docs\2, docs\3, docs\4 -Recurse -ErrorAction SilentlyContinue
 Remove-Item docs\.current_iteration, docs\hook-audit.log -ErrorAction SilentlyContinue
 ```
 
-Your own run's folders are yours to keep or delete — but don't commit
-them over the specimen.
+The committed specimen in `docs/example-run/` stays where it is — that
+one belongs to the repo, not to your run.
 
 ---
 
@@ -235,9 +233,10 @@ names the escape: delete the stale `docs\.current_iteration` cursor left
 by an aborted run, or make the edit via Bash (the documented gap exists
 for exactly this).
 
-**`/design-cycle` refuses immediately.** All four iteration folders
-exist — the committed specimen counts against the cap. Park it first
-(section 2).
+**`/design-cycle` refuses immediately.** Four iteration folders
+(`docs/1`–`docs/4`) already exist — leftovers from an earlier run hitting
+the cap. Clear them (section 2); the specimen in `docs/example-run/` is
+not the culprit, it doesn't count.
 
 **`python3` not recognised in PowerShell.** Use `python` or `py -3`.
 The hook commands themselves are fine as-is — they run under Git Bash.

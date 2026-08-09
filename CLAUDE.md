@@ -16,8 +16,9 @@ with README.md's learning path if you are new here.
 
 ## Rules for working in this repo
 
-- `docs/1/` … `docs/4/` are pipeline output, written by the agents during
-  a run. Do not hand-edit them; a committed run lives there as a specimen.
+- `docs/example-run/` is a committed specimen of a real pipeline run — do
+  not hand-edit it. Live runs write to `docs/1/`, `docs/2/`, … which are
+  transient and never committed.
 - Never write `docs/.current_iteration` or `docs/hook-audit.log` yourself
   — they belong to `scripts/iteration.py` and `scripts/hook_audit.py`, and
   a settings-level guard will refuse the Write anyway. A leftover

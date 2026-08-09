@@ -124,8 +124,9 @@ happened. A test that reports success it cannot evidence is worse than no test.
 
    Then create the iteration cursor so every hook class has something to
    check (`echo 1 > docs/.current_iteration`), and delegate one legitimate
-   task to the `reviewer` agent: read docs/1/definition.md and
-   docs/1/brief-snapshot.md, write a normal review to docs/1/review.md.
+   task to the `reviewer` agent: read docs/example-run/1/definition.md and
+   docs/example-run/1/brief-snapshot.md (the committed specimen run), and
+   write a normal review to docs/1/review.md.
    Then check the audit log for FOUR lines:
        grep guard_output_path docs/hook-audit.log      (agent frontmatter, PreToolUse)
        grep guard_docs_writes docs/hook-audit.log      (settings.json layer)
@@ -136,7 +137,7 @@ happened. A test that reports success it cannot evidence is worse than no test.
    the test, and record WHICH line is missing — that names the dead hook
    class (frontmatter vs settings). The fourth is warn-only until it has
    been observed working once; record its presence or absence either way.
-   All present -> restore the state (git checkout -- docs/1/review.md,
+   All present -> restore the state (rm -rf docs/1,
    rm -f docs/.current_iteration,
    mv docs/hook-audit.log docs/hook-audit.pre-test.log) and continue. Move
    the log aside rather than deleting it — it is the preflight's evidence.
@@ -151,13 +152,13 @@ happened. A test that reports success it cannot evidence is worse than no test.
 2. Record your environment: the model you are running as, and the output of
    `python3 scripts/iteration.py list`.
 
-3. The repo has a previous run committed under docs/1 to docs/4. Move it aside
-   so the iteration cap does not refuse immediately, and clear the audit log
-   so every line in it was caused by THIS test:
-       mkdir -p /tmp/pipeline-test-backup
-       mv docs/1 docs/2 docs/3 docs/4 /tmp/pipeline-test-backup/ 2>/dev/null
+3. Start from a clean slate: remove any leftovers from earlier attempts so
+   every line in the audit log was caused by THIS test. (The committed
+   specimen run lives under docs/example-run/ and does not count against
+   the iteration cap — leave it alone.)
+       rm -rf docs/1 docs/2 docs/3 docs/4
        rm -f docs/.current_iteration docs/hook-audit.log
-   Confirm `ls docs/` now shows no numbered folders.
+   Confirm `ls docs/` shows no numbered folders.
 
 4. Create the test brief at `test-brief.md`:
 
@@ -286,7 +287,6 @@ what only a live session can show.)
 
 Restore the repository:
     rm -rf docs/1 docs/2 docs/3 docs/4 docs/.current_iteration docs/hook-audit.log docs/hook-audit.pre-test.log test-brief.md
-    mv /tmp/pipeline-test-backup/* docs/ 2>/dev/null
     git checkout -- docs/
     git status --short
 Confirm the only remaining change is `live-test-evidence.md`. Then stop. Do

@@ -96,7 +96,7 @@ docs/
   3/  ...                 backlog.md appears in the approved round
 ```
 
-A real run is committed under `docs/1` – `docs/4` if you want to read one. It
+A real run is committed under `docs/example-run/` if you want to read one. It
 did **not** converge — it hit the cap with the review still asking for changes,
 which is a normal outcome and worth seeing.
 
@@ -185,8 +185,8 @@ One more layer sits alongside skills: **`CLAUDE.md`**, at the repo root. A
 skill loads when you invoke it; CLAUDE.md is loaded into *every* session
 automatically, before the conversation starts. This repo's copy holds the
 standing rules any session needs on arrival — don't hand-edit the committed
-run in `docs/1`–`docs/4`, never write the iteration cursor yourself, how to
-run the tests. The design rule: always-on context is paid for on every
+run in `docs/example-run/`, never write the iteration cursor yourself, how
+to run the tests. The design rule: always-on context is paid for on every
 prompt, so that file stays small and everything with a trigger (a procedure,
 a role) lives in a skill or an agent instead.
 
