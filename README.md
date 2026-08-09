@@ -46,6 +46,11 @@ python3 scripts/verify_hooks.py     # 61 cases — watch each hook decide
 The second one is the one to *read*. It prints the JSON going in, the exit
 code coming out, and the message the agent would see, for every hook.
 
+For everything beyond these two commands — running the pipeline for real,
+watching the audit log live, testing the flight recorder, and what to do
+when hooks don't fire — see **[`run-guide.md`](run-guide.md)**, the
+practical companion to the learning path below.
+
 ## The learning path
 
 In order. Each step assumes the ones before it.
