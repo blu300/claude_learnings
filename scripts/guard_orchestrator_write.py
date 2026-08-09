@@ -10,6 +10,16 @@ Both live in docs/1 only — clarification never moves to a later iteration,
 and the snapshot is taken once. `docs/.current_iteration` is written by
 scripts/iteration.py itself, so the orchestrator has no reason to touch it.
 
+One further rule, added after a live run: clarification.md is APPEND-ONLY
+for the orchestrator — the write is refused if the file does not exist yet.
+The clarifier CREATES that file; every legitimate orchestrator write to it
+(answers, strikethroughs) happens afterwards. In the run that motivated
+this, the orchestrator skipped the clarifier entirely, interrogated the
+human itself and wrote the questions file — and no guard could object,
+because writing clarification.md is genuinely its job. Creation is the one
+moment that separates "appending answers" from "swallowing the clarifier's
+role", so creation is what the guard refuses.
+
 Paths are anchored to the project root (CLAUDE_PROJECT_DIR, or the working
 directory outside a harness): a lookalike path elsewhere on disk that merely
 ends in docs/1/clarification.md is refused.
@@ -61,6 +71,23 @@ def main() -> int:
 
     root = project_root()
     if is_allowed(path, root):
+        candidate = Path(path.replace("\\", "/"))
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        target = candidate.resolve()
+        if target.name == "clarification.md" and not target.exists():
+            hook_audit.record(
+                "guard_orchestrator_write", "block",
+                f"{path} (creation refused — the clarifier creates this file)",
+            )
+            print(
+                "Blocked: docs/1/clarification.md does not exist yet. The "
+                "clarifier agent creates it; the orchestrator only appends "
+                "answers to the file the clarifier wrote. Delegate to the "
+                "clarifier instead of writing the questions yourself.",
+                file=sys.stderr,
+            )
+            return BLOCK
         hook_audit.record("guard_orchestrator_write", "allow", path)
         return ALLOW
 

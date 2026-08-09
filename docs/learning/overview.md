@@ -256,7 +256,7 @@ content. Blocking on a guess would halt an unattended pipeline for no reason.
 | Script | Event | Does |
 |---|---|---|
 | `guard_output_path.py` | Pre | One guard, four agents. Allowed filenames as CLI args; anchored to the project root; refuses writes to an *older* iteration |
-| `guard_orchestrator_write.py` | Pre | Enforces the blinding rule — orchestrator may write two files, both in `docs/1`, nothing else |
+| `guard_orchestrator_write.py` | Pre | Enforces the blinding rule — orchestrator may write two files, both in `docs/1`, nothing else — and may not *create* `clarification.md` (the clarifier does; the orchestrator only appends) |
 | `guard_docs_writes.py` | Pre | The settings-level floor: agent-independent rules that hold in every session, even when frontmatter hooks fail to load (see the case study) |
 | `warn_paste_in_prompt.py` | Pre (`Agent`) | Warns when a delegation prompt looks like pasted file content |
 | `warn_paste_in_user_prompt.py` | UserPromptSubmit | The same warning, pointed at the *human's* prompt — the one hop nobody was checking |

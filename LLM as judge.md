@@ -352,7 +352,16 @@ Two mechanical notes about the audit log before you cross-check:
     failures. Use the `session_log SubagentStart agent_type=...` lines as
     the delegation record for claim 2 — they were written by a hook, not by
     the session under test, so "four agents, in the right order" can be
-    checked mechanically instead of taken on the runner's word. PreCompact
+    checked mechanically instead of taken on the runner's word. Claim 2
+    FAILS unless a SubagentStart line exists for ALL FOUR agent types,
+    clarifier included: a clarification.md authored with no
+    `agent_type=clarifier` start line means the orchestrator swallowed the
+    clarifier's role — drift observed in a live run on 2026-08-09. (A
+    write guard now refuses creating that file from the main session;
+    treat its absence from the log as the same failure regardless.)
+    Background helper agents also stop and are recorded — their
+    SubagentStop lines carry an agent_id but NO agent_type; do not count
+    them as pipeline delegations. PreCompact
     lines also tell you which evidence was written after the session
     compacted its context — weigh verbatim quotes recorded after a
     PreCompact line accordingly.

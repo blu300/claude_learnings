@@ -109,12 +109,21 @@ banner(
     "1. guard_orchestrator_write.py",
     "PreToolUse on Write|Edit. Structural rule -> hard-blocks with exit 2.\n"
     "Enforces the blinding rule: the orchestrator writes 2 files, both in\n"
-    "docs/1, and nothing else. Paths are anchored to the project root.",
+    "docs/1, and nothing else — and may not CREATE clarification.md, only\n"
+    "append to the one the clarifier wrote. Paths anchor to the project root.",
 )
 
-case("allows clarification.md in docs/1", "guard_orchestrator_write.py",
-     {"tool_input": {"file_path": "docs/1/clarification.md"}}, 0)
-case("allows the brief snapshot", "guard_orchestrator_write.py",
+case("REFUSES CREATING clarification.md (the clarifier's job)", "guard_orchestrator_write.py",
+     {"tool_input": {"file_path": "docs/1/clarification.md"}}, 2)
+
+owner_scope = Path(tempfile.mkdtemp())
+(owner_scope / "docs" / "1").mkdir(parents=True)
+(owner_scope / "docs" / "1" / "clarification.md").write_text("# Clarification")
+case("allows clarification.md ONCE THE CLARIFIER CREATED IT", "guard_orchestrator_write.py",
+     {"tool_input": {"file_path": "docs/1/clarification.md"}}, 0, cwd=owner_scope)
+shutil.rmtree(owner_scope, ignore_errors=True)
+
+case("allows the brief snapshot (orchestrator-created, no existence rule)", "guard_orchestrator_write.py",
      {"tool_input": {"file_path": "docs/1/brief-snapshot.md"}}, 0)
 case("REFUSES clarification.md outside docs/1", "guard_orchestrator_write.py",
      {"tool_input": {"file_path": "docs/2/clarification.md"}}, 2)

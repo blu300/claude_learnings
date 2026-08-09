@@ -40,8 +40,8 @@ system lives in `docs/learning/`.
 ## Try it
 
 ```bash
-python3 -m pytest tests/ -q         # 89 passed — the scripts are correct
-python3 scripts/verify_hooks.py     # 61 cases — watch each hook decide
+python3 -m pytest tests/ -q         # 90 passed — the scripts are correct
+python3 scripts/verify_hooks.py     # 62 cases — watch each hook decide
 ```
 
 The second one is the one to *read*. It prints the JSON going in, the exit

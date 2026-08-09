@@ -144,7 +144,7 @@ name: design-cycle
 description: Runs the clarify, design, review and backlog pipeline...
 argument-hint: [path-to-brief]
 disable-model-invocation: true
-allowed-tools: Bash(python3 scripts/iteration.py *) Read Edit
+allowed-tools: Bash(python3 scripts/iteration.py *) Read Write Edit
 hooks: ...
 ---
 ```
@@ -491,6 +491,21 @@ Enforces the blinding rule from the write side. The orchestrator may write
 exactly two things — `docs/1/clarification.md` and `docs/1/brief-snapshot.md`
 — and nothing else. Both live in `docs/1` only, and the guard is exactly as
 tight as the rule.
+
+**Plus one rule a live run taught us: `clarification.md` is append-only for
+the orchestrator** — the guard refuses to *create* it. In the first live run
+of the interactive question flow (2026-08-09), the orchestrator skipped the
+clarifier entirely: it interrogated the human itself and wrote the questions
+file, and every guard stayed silent — legitimately, because writing
+`clarification.md` is genuinely the orchestrator's job (the Answers
+section). The allowlist can't tell "appending answers" from "swallowing the
+clarifier's role"… but *creation* can: every legitimate orchestrator write
+to that file happens after the clarifier made it. So creation is what the
+guard refuses, with a message that names the right agent. The drift was
+caught by the flight recorder (no `SubagentStart agent_type=clarifier` line
+in the audit log) — detection found it, and this rule now prevents it. The
+judge's checklist demands the clarifier's start-line regardless, in case a
+future guard change reopens the hole.
 
 Note its failure mode: if it can't parse the tool call, it **blocks**. For a
 structural guard, fail-closed is correct.

@@ -20,7 +20,7 @@ There are three levels, cheapest first:
 python3 -m pytest tests/ -q
 ```
 
-Expected: `89 passed`.
+Expected: `90 passed`.
 
 If `pytest` is missing: `pip install pytest`.
 
@@ -36,7 +36,7 @@ its output is checked. They tell you nothing about whether the hooks are
 python3 scripts/verify_hooks.py
 ```
 
-Expected: `61/61 cases behaved as expected`, exit code 0.
+Expected: `62/62 cases behaved as expected`, exit code 0.
 
 This is the one to read rather than just run. For every hook it prints the
 payload going in, the exit code coming out, and the message an agent would
@@ -46,7 +46,12 @@ never touches your real `docs/`.
 ### What each section shows
 
 **1. `guard_orchestrator_write.py`** — the blinding rule, enforced.
-Watch it allow `docs/1/clarification.md` and `docs/1/brief-snapshot.md`, then
+Watch the first case carefully: creating `clarification.md` is REFUSED —
+the clarifier creates that file, and the orchestrator may only append to
+it once it exists (the rule a live run's drift added; the block message
+names the right agent). Then watch it allow the same path once the file
+exists, allow `docs/1/brief-snapshot.md` (orchestrator-created, so no
+existence rule), then
 refuse everything else with **exit 2** — the design, the cursor file (which
 `iteration.py` owns now), a `clarification.md` outside `docs/1`, and a
 lookalike path outside the project. This is why the orchestrator can be

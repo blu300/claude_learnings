@@ -3,7 +3,7 @@ name: design-cycle
 description: Runs the clarify, design, review and backlog pipeline. Takes a brief, questions it, loops design and review until the review is clean, then produces a backlog.
 argument-hint: [path-to-brief]
 disable-model-invocation: true
-allowed-tools: Bash(python3 scripts/iteration.py *) Read Edit
+allowed-tools: Bash(python3 scripts/iteration.py *) Read Write Edit
 hooks:
   PreToolUse:
     - matcher: "Write|Edit"
@@ -68,14 +68,20 @@ Brief: $ARGUMENTS
    Call this folder `<dir>`, and remember `<dir>/clarification.md` as the
    clarification path for the whole run.
 
-   After creating `docs/1`, copy the brief to `docs/1/brief-snapshot.md`.
-   From this point forward, "the brief" means the snapshot path, not the
-   original — every agent receives the snapshot. This freezes the brief at
+   After creating `docs/1`, copy the brief to `docs/1/brief-snapshot.md` —
+   read the original with the Read tool and write the snapshot with the
+   Write tool. Never shell-copy it: a `cp` bypasses the write guards, so
+   the snapshot would be the one legitimate write missing from the audit
+   log. From this point forward, "the brief" means the snapshot path, not
+   the original — every agent receives the snapshot. This freezes the brief at
    the moment the pipeline started, so a later edit to the original file
    cannot silently change what the agents were working from mid-run.
 
 2. Delegate to the `clarifier` agent. Give it the brief path and tell it to
-   write `<dir>/clarification.md`.
+   write `<dir>/clarification.md`. You never write the questions yourself —
+   the clarifier creates that file, and a write guard refuses to let you
+   create it. Your only writes to it come later, appending the human's
+   answers to the file the clarifier made.
 
 3. Read that file. Present its **assumptions** in your reply, in the
    clarifier's own words — the human needs to see what will be invented

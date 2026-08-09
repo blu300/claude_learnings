@@ -19,11 +19,26 @@ def run_guard(path, cwd):
     )
 
 
-def test_allows_clarification_in_docs_1(tmp_path):
+def test_allows_clarification_in_docs_1_once_it_exists(tmp_path):
+    # The clarifier created the file; the orchestrator appends answers.
+    (tmp_path / "docs" / "1").mkdir(parents=True)
+    (tmp_path / "docs" / "1" / "clarification.md").write_text("# Clarification")
     assert run_guard("docs/1/clarification.md", tmp_path).returncode == 0
 
 
+def test_blocks_creating_clarification(tmp_path):
+    # Observed live (2026-08-09): the orchestrator skipped the clarifier,
+    # interrogated the human itself, and wrote the questions file — legally,
+    # because clarification.md is on its allowlist. Creation is the one
+    # moment that separates appending answers from swallowing the
+    # clarifier's role, so creation is refused.
+    r = run_guard("docs/1/clarification.md", tmp_path)
+    assert r.returncode == 2
+    assert "clarifier" in r.stderr
+
+
 def test_allows_brief_snapshot(tmp_path):
+    # The snapshot IS created by the orchestrator — no existence rule here.
     assert run_guard("docs/1/brief-snapshot.md", tmp_path).returncode == 0
 
 
