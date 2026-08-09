@@ -382,6 +382,9 @@ decision you can't verify (CASE-STUDY.md, lesson 1).
 | warn without blocking | JSON on stdout, exit 0: `systemMessage` (shown to the human), `hookSpecificOutput.additionalContext` (given to the model) | **stderr on exit 0 goes to a debug log nobody reads.** Two hooks in this repo were once inert for exactly this reason — tested, documented, and doing nothing |
 | stay silent | exit 0, no output | indistinguishable from "never ran" unless you log — hence the audit log |
 
+(Appendix A walks the middle rows through a real script, line by line —
+including why an after-the-fact blocker gets obeyed at all.)
+
 ## 3.4 Delegation, and where hooks come from at each moment
 
 When the orchestrator delegates to the reviewer:
@@ -413,3 +416,130 @@ disposal.**
 - verify_hooks.py — every hook in this document, run in front of you.
 - CASE-STUDY.md — what happened when the loading step silently failed,
   which is the best argument for Part 3 mattering at all.
+- Appendix A, below — one PostToolUse blocker taken apart on the actual
+  code, down to the line where a `return` becomes an exit code.
+
+---
+
+# Appendix A — how a PostToolUse blocker works, on the code
+
+The question this answers, because everyone asks it eventually: *the
+review-format checker runs AFTER the file is written — so how does it make
+the reviewer redo bad work? And why does the reviewer listen instead of
+just ignoring the feedback?* The worked example is
+`scripts/validate_review_format.py`; open it alongside this.
+
+## A.1 The journey of a rejection
+
+When the reviewer writes `review.md`, in order:
+
+1. **The write succeeds.** The file — good or bad — is now on disk.
+   Nothing that happens next can un-write it; PostToolUse is by
+   definition after the fact.
+2. The harness runs the checker, feeding it the details of the write as
+   JSON on stdin. The script opens the file *from disk* and checks the
+   structure: is the first line a proper `Verdict:`? Are all five scoring
+   rows present? Does the verdict contradict its own table?
+3. If the file is bad, the script prints a *specific* complaint —
+   `Blocked: Verdict is APPROVED but these dimensions are FAIL:
+   soundness` — and exits with code 2.
+4. **The delivery step, where the magic actually is:** the harness takes
+   that printed complaint and inserts it into the reviewer's conversation
+   as *the result of its own write*. From the reviewer's point of view it
+   tried to save a file and the world answered "rejected, because X" —
+   the same shape as a failing test or a compiler error.
+5. The reviewer writes the file again, fixed. The second write runs the
+   whole gauntlet again — PreToolUse guards, then this checker — and the
+   loop repeats until the checker's answer is silence. Every round leaves
+   an `allow` or `block` line in the audit log.
+
+## A.2 Why the agent listens — the honest part
+
+**Nothing compels it.** The bad file is already on disk, and no mechanism
+drags the agent back. What makes compliance near-universal is training:
+language models treat error messages from their tools as facts about the
+world and fix failed actions before moving on. A rejection arriving as
+the *result of its own action* is close to irresistible in a way that a
+polite instruction in a prompt is not. (This repo has watched the same
+reflex live on a different hook: a clarifier whose command was refused by
+`guard_agent_shell.py` retried in the acceptable form three seconds
+later.)
+
+So this repo really has three strengths of rule, and knowing which is
+which matters more than any single hook:
+
+| Strength | Mechanism | Can the agent ignore it? |
+|---|---|---|
+| **Prevention** (PreToolUse guards) | the action never executes | **No** — not persuasion; the file simply isn't written |
+| **Repair demand** (this checker) | the action happened; a rejection lands as its result | technically yes — practically almost never |
+| **Warning** (the paste/estimates hooks) | a note is passed along; the action proceeds | freely |
+
+And if the agent *did* shrug and move on? The malformed file stays on
+disk — but the audit log holds a `block` line with no `allow` after it,
+and the live-fire judge is told to read exactly that pattern as "the file
+stayed bad." The system cannot prevent the ignoring; it makes the
+ignoring impossible to do *quietly*. Strong things mechanical, weak
+things loud.
+
+## A.3 The same story, on the code
+
+Line numbers are from `scripts/validate_review_format.py` as of this
+writing; if they've drifted, the *shape* below is what to look for.
+
+**Step one — the number gets a name (line 48):**
+
+```python
+ALLOW = 0
+BLOCK = 2
+```
+
+The file never says a bare `2` at an exit point; it names the number once
+so every later line reads as intent.
+
+**Step two — the rejection itself (lines 115–119):**
+
+```python
+error = validate(content)                                     # 115
+if error:                                                     # 116
+    hook_audit.record("validate_review_format", "block", ...) # 117
+    print(f"Blocked: {error}", file=sys.stderr)               # 118
+    return BLOCK                                              # 119
+```
+
+Line 115 runs the structure checks and gets back either `None` (fine) or
+a complaint string. Line 117 writes the audit-log line *before* anything
+else can go wrong. Line 118 prints the complaint — **this exact text is
+what the harness shows the reviewer** (stderr is only surfaced to the
+model on a blocking exit; on exit 0 it goes to a debug log nobody reads).
+Line 119 returns the number — note `return`, not `exit`: `main()` just
+hands back an integer.
+
+**Step three — where a return becomes an exit code (line 126):**
+
+```python
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+The standard Python idiom: run `main()`, take whatever number it
+returned, end the process with it. This is the line where `return BLOCK`
+turns into "the program exited with code 2" — the only thing the harness
+actually observes.
+
+**The doors you'd miss on a quick read:**
+
+- Lines 101–103 and 111–113 are two more `return BLOCK`s for different
+  reasons: the script couldn't parse what it was told about the write, or
+  the file exists but can't be read. Both refuse rather than pass
+  unchecked — a structural checker fails closed.
+- Line 106–107 is the opposite door: a path that isn't
+  `docs/<n>/review.md` exits 0 without a word. That scope gate is what
+  lets the same script also run project-wide from `.claude/settings.json`
+  without nagging every write in every session (§2.2).
+
+One caveat to complete the honesty: "exit 2 blocks" is **per-event**, not
+universal. At PostToolUse there is nothing left to block, so the harness
+defines exit 2 there as "show the stderr to the model" — a repair demand.
+At PreToolUse the same code stops the call outright. At Stop/SubagentStop
+it *keeps the agent running*. Same number, three meanings; the per-event
+table in the hooks reference is the authority.
