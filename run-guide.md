@@ -263,6 +263,19 @@ for exactly this).
 the cap. Clear them (section 2); the specimen in `docs/example-run/` is
 not the culprit, it doesn't count.
 
+**A different planning skill takes over instead of the pipeline** (e.g.
+superpowers' "writing-plans" starts making specs). Two things are going
+on. First, the pipeline can *never* start itself — its skill declares
+`disable-model-invocation: true`, so it only runs when you literally type
+`/design-cycle <brief>`; asked in plain words to "plan X", Claude picks
+from the skills that *are* allowed to volunteer, which means whatever
+plugins are installed on your machine. Always start pipeline work with
+the slash command. Second, this project's settings now disable the
+superpowers plugin inside this repo (`"enabledPlugins": {"superpowers":
+false}` in `.claude/settings.json`); if it still appears, run `/plugins`
+in a session to check the plugin's exact installed name and adjust that
+key to match (e.g. `superpowers@<marketplace-name>`).
+
 **`python3` not recognised in PowerShell.** Use `python` or `py -3`.
 The hook commands themselves are fine as-is — they run under Git Bash.
 

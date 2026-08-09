@@ -16,6 +16,15 @@ with README.md's learning path if you are new here.
 
 ## Rules for working in this repo
 
+- Design and planning work in this repo goes through the pipeline: the
+  human types `/design-cycle <brief>`. Never use outside planning or spec
+  skills here (superpowers' writing-plans, brainstorming, and similar) —
+  this repo IS the demonstration of its own skills and agents, and
+  routing its design work through a different stack defeats the entire
+  point. Note the pipeline will never start itself: its skill sets
+  `disable-model-invocation: true`, so if nobody has typed
+  `/design-cycle`, say so instead of substituting another workflow.
+
 - `docs/example-run/` is a committed specimen of a real pipeline run — do
   not hand-edit it. Live runs write to `docs/1/`, `docs/2/`, … which are
   transient and never committed.

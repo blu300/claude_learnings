@@ -1,4 +1,7 @@
 {
+  "enabledPlugins": {
+    "superpowers": false
+  },
   "hooks": {
     "PreToolUse": [
       {

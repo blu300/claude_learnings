@@ -170,7 +170,16 @@ Things worth noticing:
   persists for the session; skill *permissions* last one turn. Those are two
   different lifetimes and it is worth knowing which is which.
 - **`disable-model-invocation: true`** means it only runs when a human asks
-  for it — it won't fire on its own.
+  for it — it won't fire on its own. Know the side effect before you reach
+  for this flag: an invite-only skill is invisible to Claude's own skill
+  selection, so a plain-words request ("plan this for me") gets answered by
+  whatever *other* installed skills volunteer — on a machine with an
+  always-on planning plugin, that plugin wins every time. This repo learned
+  that live: a session cheerfully ran a third-party planning skill inside
+  the repo built to demonstrate this pipeline. The counterweights are
+  CLAUDE.md (an always-on rule saying design work goes through
+  `/design-cycle`) and project settings disabling the competing plugin
+  here (`enabledPlugins` in `.claude/settings.json`).
 - **`$ARGUMENTS`** in the body receives the brief path.
 - **`` !`command` ``** executes at load time and injects the output into the
   prompt. Here `` !`python3 scripts/iteration.py list` `` tells the
