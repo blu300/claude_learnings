@@ -77,14 +77,25 @@ Brief: $ARGUMENTS
 2. Delegate to the `clarifier` agent. Give it the brief path and tell it to
    write `<dir>/clarification.md`.
 
-3. Read that file. Put its assumptions and questions to the human in your
-   reply, in the clarifier's own words. Ask the blocking questions first and
-   say plainly that the useful ones can be skipped.
+3. Read that file. Present its **assumptions** in your reply, in the
+   clarifier's own words — the human needs to see what will be invented
+   unless they object. Then put the questions to the human in two forms:
 
-4. Wait for the human. When they reply, write their answers into the
+   - **Blocking questions** go through the AskUserQuestion tool, in the
+     clarifier's own words, at most four per call. Use the concrete
+     choices the clarifier phrased inside each question as the selectable
+     options; the tool provides its own "Other" for free text, so do not
+     add one. A blocking question with no sensible preset choices is
+     asked in the text reply instead, alongside the useful ones.
+   - **Useful questions** follow in your reply as one numbered list. Say
+     plainly that they can be skipped — singly or wholesale — and
+     answered together in a single reply.
+
+4. When the answers are in — clicked or typed — write them into the
    **Answers** section of `<dir>/clarification.md`, numbered to match the
-   questions. Record unanswered questions as unanswered rather than
-   guessing — the designer needs to know which assumptions still stand.
+   questions. Record skipped and unanswered questions as unanswered rather
+   than guessing — the designer needs to know which assumptions still
+   stand.
 
    When a new answer contradicts one already in the file (this happens when a
    later reply supersedes an earlier one), do not overwrite the old answer.

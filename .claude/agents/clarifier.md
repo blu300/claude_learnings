@@ -47,7 +47,10 @@ Ask about the things that would otherwise be silently invented during design:
   the business but not the codebase. If it needs a paragraph of setup to make
   sense, you have not understood the brief well enough to ask it yet.
 - Where you can offer plausible options, do — "batch overnight, or on demand?"
-  gets answered; "what are the performance requirements?" does not.
+  gets answered; "what are the performance requirements?" does not. Two to
+  four concrete choices, phrased inside the question: for blocking
+  questions the orchestrator lifts exactly these into clickable choices,
+  so a blocking question without options costs the human a typed answer.
 - Where the brief already answers something, do not ask it.
 - Mark each question **blocking** or **useful**:
   - **Blocking** — the designer would have to invent an answer, *and* getting

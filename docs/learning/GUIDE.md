@@ -766,8 +766,10 @@ file others read**. Social friction where mechanical enforcement is impossible.
 3. Delegates to **clarifier** → writes `docs/1/clarification.md`.
    *PreToolUse guard checks the filename. SubagentStop checks it wrote
    something.*
-4. Orchestrator reads the questions, relays them to the human, writes the
-   answers back (striking through anything superseded).
+4. Orchestrator reads the questions and relays them to the human — blocking
+   ones through the AskUserQuestion tool (clickable choices lifted from the
+   clarifier's own phrasing), useful ones as a skippable list — then writes
+   the answers back (striking through anything superseded).
 5. Delegates to **designer** → `docs/1/definition.md`.
    *Paste-warn hook checks the delegation prompt.*
 6. Delegates to **reviewer** (fresh) → `docs/1/review.md`.

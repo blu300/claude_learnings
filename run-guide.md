@@ -58,8 +58,10 @@ and `Remove-Item docs\.current_iteration -ErrorAction SilentlyContinue`.)
    ```
 
 4. Stay nearby. The clarifier's questions come back to *you* through the
-   orchestrator; answer them like a normal user. After that the
-   design–review loop runs on its own: each round lands in a numbered
+   orchestrator: the blocking ones arrive one panel at a time with
+   clickable choices (pick one, or use "Other" to type your own), and the
+   useful-but-skippable ones follow as a numbered list you can answer in
+   one reply or ignore. After that the design–review loop runs on its own: each round lands in a numbered
    folder (`docs/1`, `docs/2`, …), and the run ends with an approved
    design and a backlog, or stops at four iterations and says so.
 

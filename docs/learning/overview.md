@@ -27,14 +27,15 @@ name.
 ## What happens, in order
 
 **1. It asks you questions.** The `clarifier` reads your brief and writes a
-list of assumptions and questions. The orchestrator reads them out to you,
-blocking ones first.
+list of assumptions and questions. The orchestrator shows you the
+assumptions, then asks the questions in two forms:
 
-Each question is marked **blocking** or **useful**:
-
-- **blocking** — the designer would have to invent an answer, and inventing it
-  wrong means rework. The pipeline waits.
-- **useful** — worth knowing, safe to skip.
+- **blocking** questions — ones where the designer would otherwise have to
+  invent an answer, and inventing it wrong means rework — arrive one panel
+  at a time with clickable choices (plus an "Other" box for your own
+  words). The pipeline waits for these.
+- **useful** questions follow as a plain numbered list — worth knowing,
+  safe to skip, answerable in one reply or not at all.
 
 Skip anything you don't care about. Unanswered questions are recorded as
 unanswered, so the designer knows which assumptions are still guesses rather
