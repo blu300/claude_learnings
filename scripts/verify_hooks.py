@@ -200,6 +200,30 @@ print(f"    {DIM}log :{RESET} {len(audit_lines)} lines, allow and block both pre
 shutil.rmtree(scope, ignore_errors=True)
 
 # ---------------------------------------------------------------------------
+# 2b. guard_agent_shell.py — PreToolUse on Bash, per-agent tool scoping
+# ---------------------------------------------------------------------------
+
+banner(
+    "2b. guard_agent_shell.py",
+    "PreToolUse on Bash, wired in the clarifier's frontmatter. An agent's\n"
+    "tools: list grants Bash all-or-nothing — no patterns allowed — so\n"
+    "'exactly one script' is built from two parts: grant Bash, then let\n"
+    "this hook narrow it to an allowlisted command prefix. The clarifier\n"
+    "gets brief_stats.py and nothing else; the designer has no Bash at all.",
+)
+
+PREFIX = "python3 scripts/brief_stats.py"
+
+case("allows the one blessed command", "guard_agent_shell.py",
+     {"tool_input": {"command": f"{PREFIX} brief.md"}}, 0, args=(PREFIX,))
+case("REFUSES any other command", "guard_agent_shell.py",
+     {"tool_input": {"command": "ls docs/"}}, 2, args=(PREFIX,))
+case("REFUSES the blessed prefix with a chained command", "guard_agent_shell.py",
+     {"tool_input": {"command": f"{PREFIX} b.md; rm -rf docs"}}, 2, args=(PREFIX,))
+case("REFUSES command substitution in the arguments", "guard_agent_shell.py",
+     {"tool_input": {"command": f"{PREFIX} $(whoami)"}}, 2, args=(PREFIX,))
+
+# ---------------------------------------------------------------------------
 # 3. warn_paste_in_prompt.py — PreToolUse on Agent, WARN ONLY
 # ---------------------------------------------------------------------------
 

@@ -149,30 +149,18 @@ hooks: ...
 ---
 ```
 
-Things worth noticing:
+Things worth noticing (full field-by-field anatomy:
+[MECHANICS.md](MECHANICS.md) §2.5):
 
-- **`allowed-tools` is a permission *grant*, not a restriction.** This one
-  catches people out, including the first version of this guide. It lists
-  tools Claude may use *without a permission prompt* during the turn that
-  invoked the skill — it does not remove anything from the pool, and every
-  other tool remains callable under your normal permission settings. Writing
-  `Bash(python3 scripts/iteration.py *)` means "don't prompt me for that
-  command", not "only that command is allowed".
-
-  The field that actually restricts is **`disallowed-tools`**, which removes
-  tools from the pool while the skill is active.
-
-  > *"Tools Claude can use without asking permission during the turn that
-  > invokes this skill. The grant clears when you send your next message."*
-  > — [skills reference](https://code.claude.com/docs/en/skills)
-
-  **And note that expiry**, because this pipeline runs headfirst into it. The
-  grant clears on the user's next message, but the orchestrator is a
-  multi-turn relay — it asks the human the clarifier's questions and waits.
-  On the turn after the human answers, the grant is gone and
-  `Bash(python3 scripts/iteration.py *)` prompts normally. Skill *content*
-  persists for the session; skill *permissions* last one turn. Those are two
-  different lifetimes and it is worth knowing which is which.
+- **`allowed-tools` is a permission *grant*, not a restriction** — it
+  pre-approves, it removes nothing (that's `disallowed-tools`). The part
+  that bites *this* pipeline is the expiry: the grant clears on the user's
+  next message, and the orchestrator is a multi-turn relay — it asks the
+  human questions and waits. On the turn after the human answers, the
+  grant is gone and `Bash(python3 scripts/iteration.py *)` prompts
+  normally. Skill *content* persists for the session; skill *permissions*
+  last one turn. Two different lifetimes, and live runs show the second
+  one as a mid-pipeline permission prompt.
 - **`disable-model-invocation: true`** means it only runs when a human asks
   for it — it won't fire on its own. Know the side effect before you reach
   for this flag: an invite-only skill is invisible to Claude's own skill
@@ -336,86 +324,26 @@ part of the lesson:
 | `WorktreeCreate`, `WorktreeRemove` | git worktrees | unused |
 | `Elicitation`, `ElicitationResult` | MCP servers asking the user for input | no MCP servers here |
 
-### How a hook is declared
+### The mechanics — declaration syntax, channels, runtime
 
-In the frontmatter of an agent or skill:
+How a hook is *written* (every field of the YAML, frontmatter vs
+settings.json), how it *talks back* (stdin JSON, exit codes, the
+stdout-JSON warning channels), and what the harness actually does at
+runtime now live in one place:
+[MECHANICS.md](MECHANICS.md) — Part 2 for the syntax, Part 3 for the
+runtime walk-through of a single `Write` call through this repo's guards.
 
-```yaml
-hooks:
-  PreToolUse:
-    - matcher: "Write|Edit"                       # which tools trigger it
-      hooks:
-        - type: command
-          command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/guard_output_path.py" review.md'
-```
+Two scars from this repo's history are worth restating here even so,
+because the surrounding sections refer to them:
 
-- `matcher` is a regex against the tool name.
-- `${CLAUDE_PROJECT_DIR}` makes the path work regardless of working directory.
-- Arguments after the script name are ordinary CLI args — that's how one
-  generic guard serves four agents with different allowed filenames.
-
-**One thing that will silently defeat all of this: workspace trust.** Hooks
-declared in a *project's* agent or skill frontmatter only run once the
-workspace trust dialog has been accepted for the folder that file came from.
-Clone this repo, decline the dialog (or never see it), and every guard here
-fails to fire with no error and no explanation — the pipeline just runs
-unguarded. If you are testing hooks and nothing happens at all, check trust
-before you debug the script.
-
-### How a hook communicates
-
-The harness pipes the tool call to the script as **JSON on stdin**, and reads
-the result back. Every script here follows the same shape:
-
-```python
-call = json.load(sys.stdin)              # the tool call
-path = call["tool_input"]["file_path"]   # what it's trying to write
-...
-print("Blocked: ...", file=sys.stderr)   # message shown to the agent
-return 2                                 # exit code = the decision
-```
-
-**Exit codes:**
-
-| Code | Meaning |
-|---|---|
-| `0` | Allow. **stderr goes to the debug log only — nobody sees it.** |
-| `2` | The blocking signal. What it blocks depends on the event (see above). stderr *is* fed back to the agent. |
-
-That first row is the trap, and this guide fell into it. Printing a warning to
-stderr and exiting 0 does nothing at all:
-
-> *"Stderr from a hook that exits 0 goes to the debug log only, never the
-> transcript, and Claude never sees it."*
-> — [hooks reference](https://code.claude.com/docs/en/hooks)
-
-Both warn-only hooks in this repo were originally written that way and were
-therefore **completely inert**. They looked correct, they were unit-tested, and
-they did nothing in a real session.
-
-**To say something without blocking, use JSON on stdout.** Two fields, two
-different audiences:
-
-```python
-print(json.dumps({
-    "systemMessage": "Warning: ...",              # -> the USER sees this
-    "hookSpecificOutput": {
-        "hookEventName": "PreToolUse",
-        "additionalContext": "...",               # -> CLAUDE sees this
-    },
-}))
-```
-
-| You want to reach | Use |
-|---|---|
-| The **user** | `systemMessage`, exit 0 — action proceeds |
-| **Claude**, non-blocking | `hookSpecificOutput.additionalContext`, exit 0 |
-| **Claude**, from PostToolUse | exit 2 — the tool already ran, so this warns rather than blocks |
-| Block a call outright | `decision: "block"` with a `reason`, or exit 2 at a blockable event |
-
-Note the third row collapses the tidy "2 means block" story: at PostToolUse the
-docs actively recommend exit 2 *as the way to warn*, because there is nothing
-left to block. Exit 2's meaning is per-event, not universal.
+- **Workspace trust silently defeats frontmatter hooks.** Hooks declared
+  in a project's agent or skill files only load once the trust dialog has
+  been accepted for the folder — decline it (or hit the trust-lookup bug
+  in CASE-STUDY.md) and every guard fails to fire with no error at all.
+- **Stderr on exit 0 reaches nobody.** Both warn-only hooks here were
+  originally written that way and were completely inert — unit-tested,
+  documented, and doing nothing. Warnings must travel as JSON on stdout
+  (`systemMessage` for the human, `additionalContext` for Claude).
 
 ### The load-bearing distinction: hard-block vs warn-only
 
@@ -440,8 +368,9 @@ everything, defeating the purpose.*
 
 ## 5. The scripts
 
-All are stdlib-only Python, all under ~150 lines: nine hook scripts, two
-shared modules (`hook_audit.py`, `docs_scope.py`) and one folder manager.
+All are stdlib-only Python, all under ~150 lines: ten hook scripts, two
+shared modules (`hook_audit.py`, `docs_scope.py`), one folder manager and
+one deliberately ordinary tool script (`brief_stats.py`).
 
 ### `iteration.py` — folder management *(not a hook)*
 
@@ -535,6 +464,22 @@ It also carries the repo's most Windows-shaped scar: its name checks are
 case-insensitive and colon/stream path forms are refused, because NTFS
 happily treats `docs/.Current_Iteration` as the real cursor — the review
 that caught this found a working bypass in code written to stop bypasses.
+
+### `guard_agent_shell.py` + `brief_stats.py` — the tool exhibit
+
+The pair that demonstrates giving an agent a tool. `brief_stats.py` is
+deliberately ordinary Python — word, heading and question counts for a
+brief — because the lesson is that *being a tool is a property of the
+wiring, not the script*. The clarifier's `tools:` grants `Bash`, and its
+frontmatter `PreToolUse` hook on the `Bash` matcher runs
+`guard_agent_shell.py` with one blessed command prefix: anything that
+isn't `python3 scripts/brief_stats.py …` — or that smuggles shell
+operators (`;`, `&&`, `$()`…) after the blessed prefix — is refused with
+an audit line. The designer has no `Bash` at all, so the same script does
+not exist for it. Grant broad, narrow with a hook, withhold entirely:
+three positions on one dial. The full walk-through is
+[MECHANICS.md](MECHANICS.md) §2.4, honest limits included (a prefix
+allowlist is a leash, not a sandbox).
 
 ### `warn_paste_in_prompt.py` — PreToolUse on `Agent`, warn-only
 

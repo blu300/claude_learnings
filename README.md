@@ -8,10 +8,10 @@ agents interrogate it, design it, review the design, and break the result into
 a backlog. A coordinator routes between them and relays anything that needs a
 human.
 
-It is deliberately small — four agents, one skill, nine hook scripts, two
-shared modules and a folder-management script, none longer than about a
-hundred and fifty lines — because the point is to be readable, not
-impressive.
+It is deliberately small — four agents, one skill, ten hook scripts, two
+shared modules, a folder-management script and one deliberately ordinary
+tool script, none longer than about a hundred and fifty lines — because
+the point is to be readable, not impressive.
 
 ```
        you ──▶ /design-cycle brief.md
@@ -40,8 +40,8 @@ system lives in `docs/learning/`.
 ## Try it
 
 ```bash
-python3 -m pytest tests/ -q         # 90 passed — the scripts are correct
-python3 scripts/verify_hooks.py     # 62 cases — watch each hook decide
+python3 -m pytest tests/ -q         # 102 passed — the scripts are correct
+python3 scripts/verify_hooks.py     # 66 cases — watch each hook decide
 ```
 
 The second one is the one to *read*. It prints the JSON going in, the exit
@@ -65,21 +65,27 @@ In order. Each step assumes the ones before it.
 3. **Run and read `python3 scripts/verify_hooks.py`** — every hook shown
    deciding, with the JSON in, the exit code out, and the audit log it leaves
    behind.
-4. **[`docs/learning/GUIDE.md`](docs/learning/GUIDE.md)** — every mechanism in
-   depth, why each choice was made, the known gap that was deliberately kept,
-   and the fifteen transferable lessons.
-5. **Read the recorded run** in `docs/example-run/`, with the "Results from
+4. **[`docs/learning/MECHANICS.md`](docs/learning/MECHANICS.md)** — the
+   machinery itself: what tools, skills, hooks and permissions *are*, every
+   field of a declaration explained, and what actually happens at runtime
+   when a guard fires. Read this before the GUIDE if the YAML still looks
+   like incantations.
+5. **[`docs/learning/GUIDE.md`](docs/learning/GUIDE.md)** — why *this
+   pipeline* wired those mechanisms the way it did: every design choice,
+   every incident that changed one, the known gap that was deliberately
+   kept, and the fifteen transferable lessons.
+6. **Read the recorded run** in `docs/example-run/`, with the "Results from
    the recorded run" section of
    [`docs/learning/VERIFY.md`](docs/learning/VERIFY.md) as your companion. It
    did not converge, and that outcome is worth seeing.
-6. **Read the prompts themselves**: `.claude/agents/*.md` and
+7. **Read the prompts themselves**: `.claude/agents/*.md` and
    `.claude/skills/design-cycle/SKILL.md`. After the guide, you will
    recognise every line.
-7. **Optional capstone**: run the live-fire test in
+8. **Optional capstone**: run the live-fire test in
    [`LLM as judge.md`](LLM%20as%20judge.md). It takes a real session, real
    money, and ~30 minutes, and it tests the one thing nothing above can —
    whether the harness actually runs these guards.
-8. **[`docs/learning/CASE-STUDY.md`](docs/learning/CASE-STUDY.md)** — read
+9. **[`docs/learning/CASE-STUDY.md`](docs/learning/CASE-STUDY.md)** — read
    this last: the day the capstone was run for real and five of seven
    guards silently never loaded. What it looked like, why it was invisible,
    the three root causes, and the six lessons that reshaped this repo.

@@ -20,7 +20,7 @@ There are three levels, cheapest first:
 python3 -m pytest tests/ -q
 ```
 
-Expected: `90 passed`.
+Expected: `102 passed`.
 
 If `pytest` is missing: `pip install pytest`.
 
@@ -36,7 +36,7 @@ its output is checked. They tell you nothing about whether the hooks are
 python3 scripts/verify_hooks.py
 ```
 
-Expected: `62/62 cases behaved as expected`, exit code 0.
+Expected: `66/66 cases behaved as expected`, exit code 0.
 
 This is the one to read rather than just run. For every hook it prints the
 payload going in, the exit code coming out, and the message an agent would
@@ -68,6 +68,14 @@ project — the bug the anchoring fix closed), and `REFUSES unknown options`
 (a dropped flag must not silently corrupt the allowlist). The section ends by
 printing `docs/hook-audit.log` from the temp scope — every decision you just
 watched, recorded by the scripts themselves.
+
+**2b. `guard_agent_shell.py`** — a whole tool grant, narrowed to one
+command. The clarifier's `tools:` list grants Bash (all-or-nothing — the
+list takes no patterns), and this hook makes it a single-command shell.
+The case to stare at is `REFUSES the blessed prefix with a chained
+command`: `python3 scripts/brief_stats.py b.md; rm -rf docs` *starts with*
+the allowed prefix — without the shell-operator check, a prefix allowlist
+is a doormat.
 
 **3. `warn_paste_in_prompt.py`** — the heuristic/structural split.
 It detects pasted content and warns **while still exiting 0**. Compare that

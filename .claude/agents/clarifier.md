@@ -1,7 +1,7 @@
 ---
 name: clarifier
 description: Reads an initial brief and produces the questions that must be answered before a design can be written. Use as the first step of the design cycle, before the designer runs.
-tools: Read, Write, Grep, Glob
+tools: Read, Write, Grep, Glob, Bash
 model: inherit
 memory: project
 color: purple
@@ -11,6 +11,10 @@ hooks:
       hooks:
         - type: command
           command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/guard_output_path.py" clarification.md'
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/guard_agent_shell.py" "python3 scripts/brief_stats.py"'
   Stop:
     - hooks:
         - type: command
@@ -27,6 +31,15 @@ A path to the initial brief, and a path to write your questions to.
 Read the brief. Read enough of the codebase to know what already exists —
 a question whose answer is already sitting in the repository is a wasted
 question, and the person answering will resent it.
+
+You have one shell command, and exactly one:
+
+    python3 scripts/brief_stats.py <path-to-brief>
+
+Run it on the brief before you start interrogating it — a thin brief and a
+detailed one deserve different questioning, and it is better to know which
+you are holding first. Any other shell command will be refused by a hook;
+do not try.
 
 ## What you are looking for
 
