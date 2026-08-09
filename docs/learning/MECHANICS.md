@@ -382,8 +382,8 @@ decision you can't verify (CASE-STUDY.md, lesson 1).
 | warn without blocking | JSON on stdout, exit 0: `systemMessage` (shown to the human), `hookSpecificOutput.additionalContext` (given to the model) | **stderr on exit 0 goes to a debug log nobody reads.** Two hooks in this repo were once inert for exactly this reason — tested, documented, and doing nothing |
 | stay silent | exit 0, no output | indistinguishable from "never ran" unless you log — hence the audit log |
 
-(Appendix A walks the middle rows through a real script, line by line —
-including why an after-the-fact blocker gets obeyed at all.)
+(Appendices A–E walk every row of this table through a real script, line
+by line — including why an after-the-fact blocker gets obeyed at all.)
 
 ## 3.4 Delegation, and where hooks come from at each moment
 
@@ -416,8 +416,11 @@ disposal.**
 - verify_hooks.py — every hook in this document, run in front of you.
 - CASE-STUDY.md — what happened when the loading step silently failed,
   which is the best argument for Part 3 mattering at all.
-- Appendix A, below — one PostToolUse blocker taken apart on the actual
-  code, down to the line where a `return` becomes an exit code.
+- The appendices, below — every event family this repo uses, taken apart
+  on the actual code: PostToolUse (A), PreToolUse (B), Stop/SubagentStop
+  (C), UserPromptSubmit (D), SessionStart and the recorder events (E).
+  Each answers the same three questions: what is this event, how is it
+  wired here, and what do the decisive lines actually do.
 
 ---
 
@@ -543,3 +546,276 @@ defines exit 2 there as "show the stderr to the model" — a repair demand.
 At PreToolUse the same code stops the call outright. At Stop/SubagentStop
 it *keeps the agent running*. Same number, three meanings; the per-event
 table in the hooks reference is the authority.
+
+---
+
+# Appendix B — PreToolUse: the guard that says no before anything happens
+
+The worked example is `scripts/guard_output_path.py`, the flagship guard.
+The one sentence that separates this appendix from Appendix A: **here, the
+file does not exist yet.** PreToolUse fires between the model *asking* for
+a tool call and the harness *executing* it, so exit 2 here doesn't demand
+a repair — it makes the action never have happened.
+
+## B.1 How it's wired
+
+From `.claude/agents/designer.md`:
+
+```yaml
+hooks:
+  PreToolUse:
+    - matcher: "Write|Edit"
+      hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/guard_output_path.py" definition.md dispositions.md'
+```
+
+The matcher fires it for the two writing tools. The arguments after the
+script name are the agent's personal allowlist — the same script sits in
+all four agents' files with four different argument sets. The script
+never knows *who* is calling; it knows what the caller is allowed.
+
+## B.2 The decisive lines
+
+Line numbers as of this writing (same caveat as Appendix A).
+
+**Fail closed on your own configuration (lines 89–101):**
+
+```python
+flags = [a for a in argv[1:] if a.startswith("-")]     # 89
+if flags:
+    ...
+    return BLOCK                                       # 96
+filenames = argv[1:]
+if not filenames:
+    ...
+    return BLOCK                                       # 101
+```
+
+An option-looking argument, or no allowlist at all, means the wiring is
+broken — and a guard whose wiring is broken refuses everything rather
+than guessing. Compare the warn hooks, which fail *open*: a broken guess
+should cost nothing, a broken rule should cost loudly.
+
+**Fail closed on the world too (lines 104–112):** if the JSON on stdin
+can't be parsed, the write is refused "rather than allowed unchecked."
+
+**The anchor — the most important line in the file (line 74):**
+
+```python
+relative = candidate.resolve().relative_to(root)       # 74
+```
+
+The path from the tool call is resolved to its real location and then
+required to live *inside the project root*. If `relative_to` raises, the
+path is outside — `/tmp/evil/docs/2/review.md` ends the same way as any
+path merely *shaped* like a pipeline file (line 76: `return False`).
+An earlier version checked only how the path ended, and a lookalike tree
+anywhere on disk sailed through. Lines 77–84 then check the shape —
+`docs/<number>/<allowed-filename>` — and the iteration scoping: if
+`docs/.current_iteration` says round 3 is active, a write into `docs/1`
+is refused, which is what stops a later round clobbering an earlier one.
+
+**The verdict (lines 117–129):** allow logs and returns 0; block logs,
+prints the reason to stderr — *shown to the agent because the exit is
+blocking* — and returns 2. The write never executes; there is nothing on
+disk to clean up. That's the entire difference in power between this
+appendix and Appendix A.
+
+---
+
+# Appendix C — Stop / SubagentStop: "block" means keep going
+
+The worked example is `scripts/check_subagent_output.py`. This event
+fires when an agent tries to *finish* — not around any tool call — and
+its blocking semantics are reversed from everything else: blocking a
+*stop* means the agent is **kept running**, with your reason handed to it
+as its next instruction.
+
+## C.1 How it's wired
+
+From `.claude/agents/reviewer.md`:
+
+```yaml
+  Stop:
+    - hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/check_subagent_output.py" review.md'
+```
+
+Declared as `Stop`; the harness converts it to `SubagentStop` for
+subagents at runtime — that conversion is the documented wiring, and its
+absence is why an earlier `SubagentStop:` block in SKILL.md never fired
+anywhere (CASE-STUDY.md). Note the argument: each agent passes the
+filename it *owes*. The event carries no `file_path` — an agent stopping
+isn't about any one file — so, exactly like Appendix B, the knowledge
+rides in the declaration.
+
+## C.2 The decisive lines
+
+**The reply channel is JSON, not an exit code (lines 163–164):**
+
+```python
+print(json.dumps({"decision": "block", "reason": reason}))   # 163
+return 0                                                     # 164
+```
+
+Exit code 0 — and yet this blocks (the stop). Stop-family hooks speak
+structured JSON on stdout; `reason` becomes the agent's next instruction,
+which is why the script phrases it as an order to the *agent* ("Write
+your output file to that folder now…"), never as a report to the
+orchestrator — the orchestrator never sees it.
+
+**The check itself (line 135):**
+
+```python
+missing = [name for name in expected if not (folder / name).exists()]
+```
+
+Plain filesystem truth: is the owed file there? The `expected` list came
+from the wiring's argument.
+
+**The loop-breaker (lines 96–99 and 129–132):**
+
+```python
+stop_hook_active = bool(payload.get("stop_hook_active"))     # 99
+...
+if stop_hook_active:                                         # 129
+    hook_audit.record(..., "already nudged once, letting the agent go")
+    return 0                                                 # 132
+```
+
+The payload's `stop_hook_active` is true when the agent is *already*
+continuing because this hook blocked it. Without this check, an agent
+that legitimately has nothing to write would be trapped forever: try to
+stop → blocked → explain why → try to stop → blocked again. One nudge,
+then let go. If you write a stop hook and skip this, you have built a
+cage, not a check.
+
+**Every fail-open is logged (lines 118–128):** no cursor file, or the
+folder missing, means "nothing to check" — allowed, but with an audit
+line saying so, because a silent fail-open is indistinguishable from a
+hook that never loaded. That distinction is the case study in one line.
+
+---
+
+# Appendix D — UserPromptSubmit: before the model even sees the prompt
+
+The worked example is `scripts/warn_paste_in_user_prompt.py`. This event
+fires when the *human* submits a message, before Claude processes it —
+the earliest interception point that exists. It CAN reject the prompt
+outright (exit 2 eats the message). This repo never does: the hook is a
+heuristic, and the repo's rule of thumb holds at every event — structural
+rules block, guesses warn.
+
+## D.1 How it's wired
+
+From `.claude/settings.json` — settings, not frontmatter, because the
+human's prompts exist in every session, not just pipeline ones:
+
+```json
+"UserPromptSubmit": [
+  { "hooks": [
+      { "type": "command",
+        "command": "python3 \"${CLAUDE_PROJECT_DIR}/scripts/warn_paste_in_user_prompt.py\"" } ] }
+]
+```
+
+No matcher — there is only one kind of occurrence.
+
+## D.2 The decisive lines
+
+**A warn hook fails open (lines 34–38):** unparseable payload → exit 0,
+silently. The mirror image of Appendix B's fail-closed, for the same
+principled reason reversed: a broken guess must cost nothing.
+
+**Defensive field names (line 42):**
+
+```python
+prompt = payload.get("prompt_text") or payload.get("prompt") or ""
+```
+
+The docs name the field `prompt_text`; older builds said `prompt`. A
+warning lost to a field rename is a warning nobody ever misses — betting
+on one name is how hooks rot silently.
+
+**Two channels, two audiences (lines 51–67):** the JSON on stdout carries
+`systemMessage` (rendered to the human — you have seen it fire when
+pasting logs into a session in this very project) and
+`hookSpecificOutput.additionalContext` (handed to the model alongside the
+prompt, so it can respond helpfully — here, by suggesting a file path
+instead of a paste). Warnings must use this channel: stderr on exit 0
+reaches nobody.
+
+**And line 68: `return 0`, always.** The prompt goes through no matter
+what the heuristics thought. The hook's own docstring calls the
+alternative what it would be: eating someone's prompt on a guess.
+
+---
+
+# Appendix E — SessionStart and the recorder events: hooks that only watch
+
+The worked example is `scripts/session_log.py` — one script wired against
+fourteen events. It demonstrates the third posture a hook can take:
+neither preventing nor demanding repair, just **making the session leave
+a record**.
+
+## E.1 How it's wired
+
+From `.claude/settings.json`, one entry per event, all pointing at the
+same script:
+
+```json
+"SessionStart": [
+  { "hooks": [
+      { "type": "command",
+        "command": "python3 \"${CLAUDE_PROJECT_DIR}/scripts/session_log.py\" SessionStart" } ] }
+]
+```
+
+The event name is passed as a command-line argument, so the settings file
+reads as a table of what gets recorded — the wiring *is* the
+documentation. The same trick as Appendices B and C, a third time: the
+script's knowledge arrives through its declaration.
+
+## E.2 The decisive lines
+
+**The whole hook is really one line (line 117):**
+
+```python
+hook_audit.record("session_log", event, " ".join(parts) or "-")
+```
+
+Everything above it is deciding which one or two payload fields are worth
+keeping (`DETAIL_FIELDS`, line 59 — checked defensively, because payload
+shapes drift between versions and a missing field should cost the detail,
+not the line). Unknown events still get a bare line: a recorder that
+drops what it doesn't recognise is quieter than it should be.
+
+**The one active moment — SessionStart injects context (lines 121–131):**
+
+```python
+note = pipeline_state_note(docs_scope.project_root())
+...
+print(json.dumps({
+    "hookSpecificOutput": {
+        "hookEventName": "SessionStart",
+        "additionalContext": note, ...
+```
+
+If a pipeline run is mid-flight (the cursor file exists), the brand-new
+session is *told so before the human types a word* — same
+`additionalContext` channel as Appendix D, different moment. A fresh
+session stumbling into half-finished state is how stale-cursor accidents
+happen; this is the cheap insurance.
+
+**And line 132: `return 0`, unconditionally.** A flight recorder that
+could ground the plane would be a very different instrument.
+
+One recorder wiring deserves its own sentence: the `FileChanged` entry
+watches `docs/.current_iteration` — the file a Bash redirect can rewrite
+*without any tool call the write guards can see* (the documented B3b
+gap). The recorder can't prevent that either. But the file changing on
+disk is visible regardless of which tool changed it, so the bypass now
+leaves a line. When prevention is impossible, detection is not nothing —
+it is the difference between a gap and a blind spot.
