@@ -215,16 +215,41 @@ experiment in `hook_error.md` §8.5 is a separate, deliberate exercise.
 ## 6. When something doesn't work
 
 **No audit lines at all, ever.** The hooks aren't loading. In order:
+
 1. Did you approve the hooks when Claude Code asked? (It asks once per
    change to `.claude/settings.json`.)
-2. Has this folder's workspace-trust dialog been accepted? Project hooks
-   don't load in untrusted folders — silently.
+
+2. Is this folder **trusted**? The first time you open a folder, Claude
+   Code asks "do you trust the files in this folder?" — and hooks
+   declared inside the project only load after you've said yes. Decline
+   it (or never see it) and every guard here is skipped *silently*: no
+   error, no message, nothing. Check what's actually recorded — Claude
+   Code keeps its answer per folder in a file called `.claude.json` in
+   your home directory:
+
+   ```powershell
+   $cfg = Get-Content "$env:USERPROFILE\.claude.json" -Raw | ConvertFrom-Json
+   $cfg.projects.PSObject.Properties.Name |
+     Where-Object { $_ -match '(?i)claude_learning' } |
+     ForEach-Object { "$_  ->  trusted: $($cfg.projects.$_.hasTrustDialogAccepted)" }
+   ```
+
+   Reading the output:
+   - `trusted: True` → trust is fine; move on to item 3.
+   - `trusted: False`, or no line at all → run `claude` in the project
+     folder once, accept the trust dialog, and re-test.
+   - **Two lines that differ only in the drive letter's case**
+     (`C:/...` and `c:/...`) → you are looking at the panel bug from
+     item 3; note which one says `True`.
+
 3. Did you launch from the VS Code side panel? On this machine that path
-   has silently skipped frontmatter hooks before, due to a
-   capital-C/small-c mismatch in the trust lookup. The full story, the
-   five-minute experiment, and the workaround: `hook_error.md` §8.5.
-   Quick fix meanwhile: launch from PowerShell or the VS Code integrated
-   terminal.
+   has silently skipped frontmatter hooks before: the panel hands Claude
+   Code the folder as `c:\...` (small c), the trust record says `C:\...`
+   (capital C), and the exact-text lookup misses — so a folder you *did*
+   trust is treated as untrusted. The full story, the five-minute
+   experiment, and the workaround (a second trust entry spelled with the
+   small c): `hook_error.md` §8.5. Quick fix meanwhile: launch from
+   PowerShell or the VS Code integrated terminal, both proven good.
 
 **A write you meant to make was blocked by "the project docs guard".**
 That's `guard_docs_writes` doing its job on `docs/<n>/` files. If you're
