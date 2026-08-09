@@ -8,7 +8,7 @@ agents interrogate it, design it, review the design, and break the result into
 a backlog. A coordinator routes between them and relays anything that needs a
 human.
 
-It is deliberately small — four agents, one skill, seven hook scripts, two
+It is deliberately small — four agents, one skill, nine hook scripts, two
 shared modules and a folder-management script, none longer than about a
 hundred and fifty lines — because the point is to be readable, not
 impressive.
@@ -39,8 +39,8 @@ per design iteration. A real, non-converging run is committed under
 ## Try it
 
 ```bash
-python3 -m pytest tests/ -q         # 76 passed — the scripts are correct
-python3 scripts/verify_hooks.py     # 53 cases — watch each hook decide
+python3 -m pytest tests/ -q         # 89 passed — the scripts are correct
+python3 scripts/verify_hooks.py     # 61 cases — watch each hook decide
 ```
 
 The second one is the one to *read*. It prints the JSON going in, the exit

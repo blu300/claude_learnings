@@ -347,6 +347,15 @@ Two mechanical notes about the audit log before you cross-check:
   - check_subagent_output lines that contain "checked: <filename>" come
     from the per-agent frontmatter wiring; lines without it come from the
     legacy coarse wiring. The preflight records which classes loaded.
+  - Lines whose script column is `session_log` are the flight recorder,
+    not guard decisions: session lifecycle, delegations, compaction, tool
+    failures. Use the `session_log SubagentStart agent_type=...` lines as
+    the delegation record for claim 2 — they were written by a hook, not by
+    the session under test, so "four agents, in the right order" can be
+    checked mechanically instead of taken on the runner's word. PreCompact
+    lines also tell you which evidence was written after the session
+    compacted its context — weigh verbatim quotes recorded after a
+    PreCompact line accordingly.
 
 RULE ON EACH OF THESE
 

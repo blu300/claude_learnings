@@ -181,6 +181,15 @@ keeps review authority in exactly one place.
 That creates the next problem: **something that cannot read cannot verify.**
 Which is what hooks are for.
 
+One more layer sits alongside skills: **`CLAUDE.md`**, at the repo root. A
+skill loads when you invoke it; CLAUDE.md is loaded into *every* session
+automatically, before the conversation starts. This repo's copy holds the
+standing rules any session needs on arrival — don't hand-edit the committed
+run in `docs/1`–`docs/4`, never write the iteration cursor yourself, how to
+run the tests. The design rule: always-on context is paid for on every
+prompt, so that file stays small and everything with a trigger (a procedure,
+a role) lives in a skill or an agent instead.
+
 ## Hooks — rules as code instead of prose
 
 Most rules started as prose in a prompt: *"never write definition.md"*, *"stop
@@ -202,13 +211,23 @@ hooks:
 The harness pipes the tool call to your script as **JSON on stdin**; the script
 answers with an exit code, or with JSON on stdout.
 
-**Three events, and the differences matter:**
+**Three enforcement events, and the differences matter:**
 
 | Event | Fires | Can it stop things? |
 |---|---|---|
 | `PreToolUse` | before the call | **Yes** — the call never happens |
 | `PostToolUse` | after the call | **No** — the file is already written. It tells Claude to fix it |
 | `SubagentStop` | when an agent finishes | Yes, but "block" prevents *stopping* — the agent keeps running |
+
+These three are where a script gets to say no. The hooks reference lists
+around thirty events in total; most of the rest are moments in a session's
+life — it started, it compacted, a delegation began, a tool call failed. This
+repo records fourteen of those with a **flight recorder** (`session_log.py`,
+wired in `.claude/settings.json`): one line per event into the same audit
+log the guards use, never blocking anything. The guards answer "should this
+be allowed?"; the recorder answers "what actually happened?" — the question
+you're left with after an unattended run. GUIDE.md section 4 has the full
+table, including the events this repo deliberately skips and why.
 
 **How a hook answers:**
 
@@ -237,11 +256,15 @@ content. Blocking on a guess would halt an unattended pipeline for no reason.
 |---|---|---|
 | `guard_output_path.py` | Pre | One guard, four agents. Allowed filenames as CLI args; anchored to the project root; refuses writes to an *older* iteration |
 | `guard_orchestrator_write.py` | Pre | Enforces the blinding rule — orchestrator may write two files, both in `docs/1`, nothing else |
+| `guard_docs_writes.py` | Pre | The settings-level floor: agent-independent rules that hold in every session, even when frontmatter hooks fail to load (see the case study) |
 | `warn_paste_in_prompt.py` | Pre (`Agent`) | Warns when a delegation prompt looks like pasted file content |
+| `warn_paste_in_user_prompt.py` | UserPromptSubmit | The same warning, pointed at the *human's* prompt — the one hop nobody was checking |
 | `warn_estimates_in_backlog.py` | Post | Warns on effort estimates. Must be Post — it reads content that doesn't exist until the write lands |
 | `validate_review_format.py` | Post | Rejects a review whose verdict contradicts its own scoring table |
-| `check_subagent_output.py` | SubagentStop | Catches an agent that finished without writing its file |
-| `hook_audit.py` | *not a hook* | One line per guard decision into `docs/hook-audit.log` — the mechanical record the live-fire test checks |
+| `check_subagent_output.py` | SubagentStop | Catches an agent that finished without writing *its own* file — each agent's wiring names the file it owes |
+| `session_log.py` | fourteen events | The flight recorder: session start/end, delegations, compaction, failures — one line each, never blocks |
+| `hook_audit.py` | *not a hook* | One line per decision into `docs/hook-audit.log` — the mechanical record the live-fire test checks |
+| `docs_scope.py` | *not a hook* | Shared path scoping: project root, current iteration, "is this a pipeline file?" |
 | `iteration.py` | *not a hook* | Creates numbered folders, moves the cursor, and enforces the 4-iteration cap — the cap is a constant in the script |
 
 ⚠️ **Project hooks only run once you accept the workspace trust dialog.**

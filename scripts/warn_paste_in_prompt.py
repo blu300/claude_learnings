@@ -33,13 +33,13 @@ import sys
 import hook_audit
 
 
-def main() -> int:
-    try:
-        call = json.load(sys.stdin)
-        prompt = call["tool_input"].get("prompt", "")
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
-        return 0
+def paste_warnings(prompt: str) -> list:
+    """The three tells that a prompt is carrying pasted file content.
 
+    Shared with warn_paste_in_user_prompt.py, which applies the same rule
+    to the HUMAN's prompt — the rule is about what travels through a
+    prompt, not about who wrote it.
+    """
     warnings = []
 
     if len(prompt) > 2000:
@@ -51,6 +51,18 @@ def main() -> int:
 
     if "```" in prompt:
         warnings.append("Prompt contains fenced code blocks — may contain pasted file content.")
+
+    return warnings
+
+
+def main() -> int:
+    try:
+        call = json.load(sys.stdin)
+        prompt = call["tool_input"].get("prompt", "")
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return 0
+
+    warnings = paste_warnings(prompt)
 
     if warnings:
         detail = " ".join(warnings)

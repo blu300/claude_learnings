@@ -4,7 +4,7 @@ This is a guide to how this repository works, written to teach the mechanisms
 rather than just document the code. It covers **subagents**, **skills**,
 **hooks**, and **the state that passes between them**.
 
-The system is deliberately small: four agents, one skill, seven hook scripts, a
+The system is deliberately small: four agents, one skill, nine hook scripts, a
 shared audit-log module and one folder-management script. Nothing here needs
 to be more complicated than it is.
 
@@ -196,6 +196,37 @@ one place.
 This has a direct consequence: **because it cannot read, it cannot verify.**
 That's the entire reason hooks exist in this project.
 
+### CLAUDE.md — the always-on layer
+
+Skills load when *invoked*. Agents load when *delegated to*. There is a third
+layer that loads before either: **`CLAUDE.md`**, a plain markdown file at the
+repo root that Claude Code reads into every session automatically, before the
+conversation starts. No trigger, no command — if the file exists, its
+contents are simply there.
+
+| Layer | Loads | Best for |
+|---|---|---|
+| `CLAUDE.md` | every session, at start | standing rules a session needs *before it does anything* |
+| a skill | when someone invokes it | a procedure with steps |
+| an agent | when the orchestrator delegates | a role with its own context |
+
+This repo ran for months without one, and the gap showed in a small way: a
+fresh session opening this folder knew nothing about the pipeline until it
+stumbled into it — nothing told it that `docs/1/`–`docs/4/` are a preserved
+specimen rather than ordinary docs, or that the iteration cursor is not its
+to write. Rules like that can't live in the skill, because sessions that
+never invoke the skill still need them.
+
+Look at what the repo's [`CLAUDE.md`](../../CLAUDE.md) does **not** contain,
+because that's the design lesson: no pipeline procedure (that's the skill's
+job), no role descriptions (the agents' job), no rule a hook already
+enforces better — just the handful of things every session must know on
+arrival, and where to read more. Always-on context is paid for on every
+single prompt, so the always-on layer should be the *smallest* of the three.
+
+(The flight recorder — next section — logs an `InstructionsLoaded` line
+when the file loads, so you can see the moment it happens.)
+
 ---
 
 ## 4. Hooks — the heart of it
@@ -210,7 +241,7 @@ the rule and nobody notices. The spec calls this **silent degradation**.
 A hook is a **shell command the harness runs around a tool call**. It is code,
 not persuasion. It cannot be talked out of its opinion.
 
-### The three events used here
+### The three enforcement events
 
 | Event | Fires | Can it block? |
 |---|---|---|
@@ -236,6 +267,61 @@ than assuming exit 2 has one universal meaning.
 `SubagentStop` is also the odd one out for matching: it isn't tool-scoped, but
 it does support matchers — they filter on **agent type** (`general-purpose`,
 `Explore`, or a custom agent's frontmatter `name`) rather than on tool name.
+
+### The rest of the catalogue — and the flight recorder
+
+The three events above are the *enforcement* events — the ones where a
+script gets to say no. But the [hooks reference](https://code.claude.com/docs/en/hooks)
+lists around thirty events in total. Most of the rest are not about
+permission at all: they are moments in a session's life — it started, it
+compacted its memory, a delegation began, a tool call failed, it ended.
+
+This repo covers those with one deliberately boring script:
+**`session_log.py`, the flight recorder.** Wired in `.claude/settings.json`
+against fourteen events, it appends one line per event to the same
+`docs/hook-audit.log` the guards write, and never blocks anything. The
+motivation comes straight from the case study: after an unattended run, the
+questions are always "did it compact?", "which agents ran, in what order?",
+"why did it stall?" — and the transcript answers none of them mechanically.
+The recorder does.
+
+What each recorded event tells you:
+
+| Event | The line answers |
+|---|---|
+| `SessionStart` / `SessionEnd` | when sessions began and ended, and why. SessionStart also *injects context*: if a pipeline run is mid-flight, the new session is told before it can trip over the state |
+| `Stop` / `StopFailure` | each finished turn — and the turns that died to an API error, which otherwise vanish without a trace |
+| `SubagentStart` / `SubagentStop` | every delegation, with the agent type. The live-fire judge can now verify "four agents, in the right order" from a record the session under test didn't write |
+| `UserPromptExpansion` | the moment `/design-cycle` expanded — proof the skill was invoked as a command |
+| `PostToolUseFailure` | tool calls that *failed* (PostToolUse only fires on success) |
+| `Notification` | what Claude Code tried to tell someone — e.g. *why* an unattended run sat waiting |
+| `PreCompact` / `PostCompact` | when a long run compressed its context. Evidence written *after* compaction relies on a summary, not verbatim memory — the judge deserves to know which is which |
+| `InstructionsLoaded` | the moment CLAUDE.md entered the session |
+| `ConfigChange` | settings changed mid-session — including a session under test editing away its own guards |
+| `FileChanged` | a *watched file* changed on disk, whoever changed it. Wired here to `docs/.current_iteration`: the write guards can't see a Bash redirect rewrite the cursor (the B3b gap), but the file changing is visible regardless of which tool did it. Detection where prevention isn't available |
+
+And one more warn hook lives at this layer: **`UserPromptSubmit`** fires on
+the *human's* prompt, before Claude processes it. `warn_paste_in_user_prompt.py`
+applies the paste heuristics there — the repo warned for months when the
+orchestrator pasted content into a delegation while nobody applied the same
+rule to the human at the top of the chain. (UserPromptSubmit *can* reject a
+prompt outright; a heuristic never should, so it warns.)
+
+**The events this repo deliberately does not cover**, because each needs
+infrastructure the repo doesn't use — knowing *why* you skip something is
+part of the lesson:
+
+| Event(s) | Fires around | Why not here |
+|---|---|---|
+| `Setup` | `claude --init-only` / maintenance runs | nothing to install or migrate here |
+| `PermissionRequest`, `PermissionDenied` | the permission prompt flow | a hook here can silently auto-approve tools — powerful, and exactly the kind of power a learning repo should not normalise |
+| `PostToolBatch` | batches of parallel tool calls | the pipeline delegates one agent at a time on purpose |
+| `MessageDisplay` | text as it is displayed | cosmetic rewriting; easy to misuse, nothing to teach here |
+| `TaskCreated`, `TaskCompleted` | the task-list system | unused in this repo |
+| `TeammateIdle` | agent teams | unused — the four agents are subagents, not a team |
+| `CwdChanged`, `DirectoryAdded` | multi-folder sessions | this is a one-folder project |
+| `WorktreeCreate`, `WorktreeRemove` | git worktrees | unused |
+| `Elicitation`, `ElicitationResult` | MCP servers asking the user for input | no MCP servers here |
 
 ### How a hook is declared
 
@@ -339,9 +425,10 @@ everything, defeating the purpose.*
 
 ---
 
-## 5. The eight scripts
+## 5. The scripts
 
-All are stdlib-only Python, all under ~120 lines.
+All are stdlib-only Python, all under ~150 lines: nine hook scripts, two
+shared modules (`hook_audit.py`, `docs_scope.py`) and one folder manager.
 
 ### `iteration.py` — folder management *(not a hook)*
 
@@ -400,14 +487,48 @@ orchestrator — a skill in the main session — also has a shell the guard does
 not see. That gap is deliberate and has its own section:
 [The coordinator's shell](#the-coordinators-shell--a-gap-kept-on-purpose).
 
+### `guard_docs_writes.py` — PreToolUse, hard-block, the settings floor
+
+The one guard wired in `.claude/settings.json` instead of frontmatter, added
+after the loading failure in the case study. Settings hooks run in *every*
+session, however it was launched — so this layer holds even when the
+frontmatter guards silently fail to load, which is precisely the scenario
+that motivated it.
+
+The price of living at this layer is identity: a settings hook cannot know
+*which* agent is writing (that knowledge exists only in the per-agent
+frontmatter wiring), so this guard enforces only the agent-independent
+rules — right folder, right iteration, no stray files in `docs/<n>/`, and no
+Write/Edit of the iteration cursor or the audit logs. Cross-writes between
+agents remain the frontmatter guard's job. **Defense in depth means the
+backup layer catches less, and writes down exactly what it misses.**
+
+It also carries the repo's most Windows-shaped scar: its name checks are
+case-insensitive and colon/stream path forms are refused, because NTFS
+happily treats `docs/.Current_Iteration` as the real cursor — the review
+that caught this found a working bypass in code written to stop bypasses.
+
 ### `warn_paste_in_prompt.py` — PreToolUse on `Agent`, warn-only
 
 Watches delegation prompts for signs of pasted file content: over 2000
-characters, three or more markdown headers, or a fenced code block. Prints to
-stderr, always exits 0.
+characters, three or more markdown headers, or a fenced code block. Warns
+via JSON on stdout (`systemMessage` + `additionalContext`), always exits 0.
 
 Note the matcher is `"Agent"`, not `"Write"` — this hook fires on
 **delegation** rather than on file writes.
+
+### `warn_paste_in_user_prompt.py` — UserPromptSubmit, warn-only
+
+The same three heuristics (imported from `warn_paste_in_prompt.py` — one
+place to tune them), pointed at the **human's** prompt instead of the
+orchestrator's delegations. For months this repo policed pasting at every
+hop except the first one. The pipeline wants a *path* to a brief, not the
+brief inline: pasted content leaves no file for the agents to read and
+nothing for `brief-snapshot.md` to freeze.
+
+UserPromptSubmit is an event that *can* reject a prompt outright (exit 2).
+This hook never does — same principle as every heuristic here: structural
+rules block, guesses warn.
 
 ### `warn_estimates_in_backlog.py` — PostToolUse, warn-only
 
@@ -479,6 +600,25 @@ the way when it can't tell which folder is active (no marker file → exit 0,
 with an audit line saying so — an earlier version was silent here, which made
 "hook never ran" and "nothing to check" indistinguishable in the log, exactly
 the ambiguity `hook_error.md` is about).
+
+### `session_log.py` — the flight recorder, fourteen events, warn-nothing
+
+Covered in depth in ["The rest of the catalogue"](#the-rest-of-the-catalogue--and-the-flight-recorder)
+above. As a *script* it is worth reading for one design habit: the event
+name arrives as a command-line argument, so the `settings.json` wiring reads
+like a table of what gets recorded, and an event it doesn't recognise still
+gets a line — a recorder that drops the unfamiliar is quieter than it
+should be. It never blocks: a flight recorder that could ground the plane
+would be a very different instrument.
+
+### `docs_scope.py` — shared path scoping *(not a hook)*
+
+Three functions used by the settings-layer hooks: where is the project
+root, which iteration is current, and is this path a pipeline file
+(`<root>/docs/<n>/<name>`)? It exists because three scripts needed the same
+answer and path-anchoring bugs are exactly the kind that only bite one
+platform — one implementation, one set of tests, one place to fix the next
+Windows surprise.
 
 ### `hook_audit.py` — the mechanical record *(not a hook)*
 

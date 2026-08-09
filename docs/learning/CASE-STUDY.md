@@ -163,3 +163,11 @@ test exists, why its preflight now checks every layer by name, and why the
 audit log records allows and not just blocks. If you take one habit from
 this case study into your own projects, take that one: make your
 protections prove they are alive, on every run, in writing.
+
+That habit had a sequel. Once the guards logged their decisions, the
+obvious next question was: why should only the *guards* leave a record?
+The repo now also runs a **flight recorder** — `scripts/session_log.py`,
+wired to a dozen session events — so the log answers "which agents ran, in
+what order? did the context compact? why did it stall?" mechanically too.
+See "The rest of the catalogue — and the flight recorder" in
+[GUIDE.md](GUIDE.md) section 4.

@@ -15,6 +15,7 @@ from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 PASTE = str(SCRIPTS / "warn_paste_in_prompt.py")
+USER_PASTE = str(SCRIPTS / "warn_paste_in_user_prompt.py")
 ESTIMATES = str(SCRIPTS / "warn_estimates_in_backlog.py")
 
 
@@ -92,6 +93,41 @@ def test_paste_never_blocks():
     """Heuristic rules must never halt an unattended pipeline."""
     for prompt in ["x" * 5000, "# a\n## b\n### c", "```\ncode\n```"]:
         assert run(PASTE, {"tool_input": {"prompt": prompt}}).returncode == 0
+
+
+# --- warn_paste_in_user_prompt.py ---
+# The human-facing twin: same heuristics, different event (UserPromptSubmit),
+# different payload shape (prompt_text at the top level, not tool_input).
+
+def test_user_paste_warns_on_long_prompt():
+    r = run(USER_PASTE, {"prompt_text": "x" * 2001})
+    assert r.returncode == 0
+    w = warning_of(r)
+    assert w["systemMessage"]
+    assert w["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
+    assert w["hookSpecificOutput"]["additionalContext"]
+
+
+def test_user_paste_accepts_legacy_prompt_field():
+    # Docs name the field prompt_text; older builds used prompt. The
+    # warning must not be lost to a rename.
+    r = run(USER_PASTE, {"prompt": "# a\ntext\n## b\ntext\n### c\ntext"})
+    assert r.returncode == 0
+    assert warning_of(r)["systemMessage"]
+
+
+def test_user_paste_silent_on_normal_prompt():
+    r = run(USER_PASTE, {"prompt_text": "Run /design-cycle brief.md please"})
+    assert r.returncode == 0
+    assert warning_of(r) is None
+
+
+def test_user_paste_never_blocks():
+    # UserPromptSubmit CAN reject a prompt with exit 2. A heuristic must
+    # never eat someone's prompt on a guess.
+    for payload in [{"prompt_text": "x" * 5000}, {"prompt_text": "```\ncode\n```"},
+                    {}, {"prompt_text": None}]:
+        assert run(USER_PASTE, payload).returncode == 0
 
 
 # --- warn_estimates_in_backlog.py ---

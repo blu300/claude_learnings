@@ -20,7 +20,7 @@ There are three levels, cheapest first:
 python3 -m pytest tests/ -q
 ```
 
-Expected: `76 passed`.
+Expected: `89 passed`.
 
 If `pytest` is missing: `pip install pytest`.
 
@@ -36,7 +36,7 @@ its output is checked. They tell you nothing about whether the hooks are
 python3 scripts/verify_hooks.py
 ```
 
-Expected: `53/53 cases behaved as expected`, exit code 0.
+Expected: `61/61 cases behaved as expected`, exit code 0.
 
 This is the one to read rather than just run. For every hook it prints the
 payload going in, the exit code coming out, and the message an agent would
@@ -123,6 +123,22 @@ a constant in the script, `--max` can lower it but never raise it (watch the
 `docs/.current_iteration` itself. The orchestrator cannot loop forever
 because there is nowhere left to write, and it cannot forget the cursor
 because it never touches it.
+
+**8. `session_log.py`** — the flight recorder. Five different session
+events, five lines in the same audit log the guards use. Two cases repay a
+close look: `SessionStart` doesn't just log — when a pipeline run is
+mid-flight it *injects context*, so a fresh session is warned about the
+state before it can trip over it; and `FileChanged` records the iteration
+cursor changing on disk — which a Bash redirect can do without any Write
+tool call, invisibly to every PreToolUse guard. The recorder can't prevent
+that; it can make sure it isn't silent.
+
+**9. `warn_paste_in_user_prompt.py`** — the paste warning, pointed at the
+human. Same heuristics as section 3, different event (`UserPromptSubmit`,
+which fires on the human's prompt before Claude processes it) and a
+different payload shape. That event *can* reject a prompt outright — watch
+both cases exit 0 anyway, because a heuristic must never eat someone's
+prompt on a guess.
 
 ---
 

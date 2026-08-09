@@ -456,6 +456,69 @@ print(f"    next --max 99: exit={proc.returncode} (expected 1) "
 shutil.rmtree(tmp, ignore_errors=True)
 
 # ---------------------------------------------------------------------------
+# 8. session_log.py — the flight recorder
+# ---------------------------------------------------------------------------
+
+banner(
+    "8. session_log.py",
+    "The flight recorder, wired in .claude/settings.json against a dozen\n"
+    "session events. The guards answer 'should this be allowed?'; this\n"
+    "answers 'what actually happened?' — one audit line per event, never a\n"
+    "block. The event name is a CLI arg, so the settings wiring reads like\n"
+    "a table of what gets recorded.",
+)
+
+tmp = Path(tempfile.mkdtemp())
+(tmp / "docs" / "2").mkdir(parents=True)
+(tmp / "docs" / ".current_iteration").write_text("2")
+
+case("SessionStart tells a fresh session about mid-flight pipeline state",
+     "session_log.py", {"source": "startup"}, 0, cwd=tmp, args=("SessionStart",))
+case("SubagentStart leaves a delegation record the session didn't write",
+     "session_log.py", {"agent_type": "reviewer", "agent_id": "a1"}, 0,
+     cwd=tmp, args=("SubagentStart",))
+case("PreCompact stamps WHEN the context was compacted",
+     "session_log.py", {"compaction_reason": "auto"}, 0, cwd=tmp, args=("PreCompact",))
+case("FileChanged sees the Bash cursor bypass the write guards cannot",
+     "session_log.py", {"file_path": "docs/.current_iteration",
+                        "change_type": "modified"}, 0, cwd=tmp, args=("FileChanged",))
+case("StopFailure records a turn that died to an API error",
+     "session_log.py", {"error_type": "api_error"}, 0, cwd=tmp, args=("StopFailure",))
+
+recorder_log = (tmp / "docs" / "hook-audit.log")
+lines = recorder_log.read_text().strip().splitlines() if recorder_log.exists() else []
+recorded = [l for l in lines if " session_log " in l]
+ok = len(recorded) == 5
+results.append(ok)
+print(f"\n  {BOLD}five events, five lines in the same audit log the guards use{RESET}")
+for line in recorded[-3:]:
+    print(f"    {DIM}{line}{RESET}")
+print(f"    {DIM}log :{RESET} {len(recorded)} session_log lines   "
+      f"{GREEN + 'PASS' + RESET if ok else RED + 'FAIL' + RESET}")
+
+shutil.rmtree(tmp, ignore_errors=True)
+
+# ---------------------------------------------------------------------------
+# 9. warn_paste_in_user_prompt.py — UserPromptSubmit, WARN ONLY
+# ---------------------------------------------------------------------------
+
+banner(
+    "9. warn_paste_in_user_prompt.py",
+    "UserPromptSubmit — fires on the HUMAN's prompt, before Claude sees it.\n"
+    "The twin of warn_paste_in_prompt.py: the repo warned when the\n"
+    "orchestrator pasted content into a delegation, and nobody applied the\n"
+    "same rule to the human at the top of the chain. UserPromptSubmit CAN\n"
+    "reject a prompt (exit 2); a heuristic never should, so this one warns.",
+)
+
+case("silent on a normal prompt", "warn_paste_in_user_prompt.py",
+     {"prompt_text": "Run /design-cycle brief.md"}, 0, expect_warning=False)
+case("warns when the human pastes a wall of content (still exit 0)",
+     "warn_paste_in_user_prompt.py",
+     {"prompt_text": "# Brief\n" + "x" * 2100 + "\n## Scope\n### Notes\n```\ncode\n```"},
+     0, expect_warning=True)
+
+# ---------------------------------------------------------------------------
 
 shutil.rmtree(DEFAULT_SCOPE, ignore_errors=True)
 
