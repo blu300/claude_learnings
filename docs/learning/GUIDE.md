@@ -4,7 +4,7 @@ This is a guide to how this repository works, written to teach the mechanisms
 rather than just document the code. It covers **subagents**, **skills**,
 **hooks**, and **the state that passes between them**.
 
-The system is deliberately small: four agents, one skill, six hook scripts, a
+The system is deliberately small: four agents, one skill, seven hook scripts, a
 shared audit-log module and one folder-management script. Nothing here needs
 to be more complicated than it is.
 
@@ -439,8 +439,12 @@ just scored as failing.
 
 ### `check_subagent_output.py` — SubagentStop, JSON output
 
-When any subagent finishes, it checks the current iteration folder contains at
-least one `.md` file.
+When a subagent finishes, it checks that the agent's own output file exists in
+the current iteration folder. Each agent's frontmatter declares a `Stop` hook
+(converted to `SubagentStop` at runtime — the documented wiring for subagent
+stop hooks) and passes the filename that agent owns, the same way
+`guard_output_path.py` takes its allowlist. Run with no arguments it falls
+back to the original coarse form: does the folder contain *any* `.md` file?
 
 **It does not do what SKILL.md's prose rule says**, and the gap is instructive.
 The rule is *"if an agent fails to write its file, report the failure and
@@ -463,13 +467,18 @@ a chance to write the file it forgot. But it is not what the prose says, and
 writing the `reason` for the wrong reader is an easy mistake — this repo made
 it first time round.
 
-**It is deliberately coarse, and that's a lesson in itself.** SubagentStop
-receives no `file_path` — it isn't tied to a tool call — so it *cannot* know
-which file was expected. It can only ask "did anything get written?" Rather
-than parsing transcripts to fake precision, it does the coarse check honestly
-and documents the limit. It also stays silent when it can't tell which folder
-is active (no marker file → exit 0), because a guard that fires outside its
-intended context is worse than no guard.
+**Its knowledge comes from the wiring, not the event — a lesson in itself.**
+SubagentStop receives no `file_path`: it isn't tied to a tool call, so the
+event *cannot* say which file was expected. The first version therefore only
+asked "did anything get written?" — honest, but it could catch only the first
+writer into a fresh folder; once any agent had written any `.md`, every later
+agent that wrote nothing passed. The fix is the same trick the write guard
+uses: the expected filename rides in each agent's frontmatter command line.
+The event still knows nothing; the *declaration* does. It still stays out of
+the way when it can't tell which folder is active (no marker file → exit 0,
+with an audit line saying so — an earlier version was silent here, which made
+"hook never ran" and "nothing to check" indistinguishable in the log, exactly
+the ambiguity `hook_error.md` is about).
 
 ### `hook_audit.py` — the mechanical record *(not a hook)*
 

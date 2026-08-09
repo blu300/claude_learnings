@@ -11,6 +11,10 @@ hooks:
       hooks:
         - type: command
           command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/guard_output_path.py" definition.md dispositions.md'
+  Stop:
+    - hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/check_subagent_output.py" definition.md'
 ---
 
 You turn criteria into a design document. You do not review your own work and

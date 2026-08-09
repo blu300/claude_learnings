@@ -219,19 +219,30 @@ banner(
     "4. warn_estimates_in_backlog.py",
     "PostToolUse on Write. Must be Post: it reads the file's CONTENT, which\n"
     "does not exist until the write has happened. Heuristic -> warn only,\n"
-    "via JSON on stdout (systemMessage + additionalContext).",
+    "via JSON on stdout (systemMessage + additionalContext). Wired in both\n"
+    "the backlog-writer's frontmatter and .claude/settings.json, so it scopes\n"
+    "itself: only docs/<n>/backlog.md is ever scanned.",
 )
 
 tmp = Path(tempfile.mkdtemp())
-clean = tmp / "clean.md"
-clean.write_text("# Backlog\n\n### Story 1.1\nAcceptance criteria:\n- works\n")
-dirty = tmp / "dirty.md"
-dirty.write_text("# Backlog\n\n### Story 1.1\nEstimate: 3 days\n5 points\n")
+backlog = tmp / "docs" / "2" / "backlog.md"
+backlog.parent.mkdir(parents=True)
 
+backlog.write_text("# Backlog\n\n### Story 1.1\nAcceptance criteria:\n- works\n")
 case("silent on a clean backlog", "warn_estimates_in_backlog.py",
-     {"tool_input": {"file_path": str(clean)}}, 0, expect_warning=False)
+     {"tool_input": {"file_path": str(backlog)}}, 0, cwd=tmp, expect_warning=False)
+
+backlog.write_text("# Backlog\n\n### Story 1.1\nEstimate: 3 days\n5 points\n")
 case("warns on time units and story points (still exit 0)", "warn_estimates_in_backlog.py",
-     {"tool_input": {"file_path": str(dirty)}}, 0, expect_warning=True)
+     {"tool_input": {"file_path": str(backlog)}}, 0, cwd=tmp, expect_warning=True)
+
+# Settings-level wiring means this hook sees EVERY write in every session —
+# a file full of estimate-words that is not a pipeline backlog must stay
+# unmolested, or the hook would nag interactive sessions constantly.
+elsewhere = tmp / "docs" / "plan.md"
+elsewhere.write_text("Rough estimate: 3 days of effort, maybe 5 points.")
+case("silent on estimate-words OUTSIDE docs/<n>/backlog.md", "warn_estimates_in_backlog.py",
+     {"tool_input": {"file_path": str(elsewhere)}}, 0, cwd=tmp, expect_warning=False)
 
 shutil.rmtree(tmp, ignore_errors=True)
 
@@ -243,14 +254,19 @@ banner(
     "5. validate_review_format.py",
     "PostToolUse on Write. PostToolUse CANNOT block -- the file is already on\n"
     "disk. Exit 2 shows stderr to the reviewer so it rewrites the file. The\n"
-    "malformed version existed in between. Catches self-contradiction.",
+    "malformed version existed in between. Catches self-contradiction. Wired\n"
+    "in both the reviewer's frontmatter and .claude/settings.json, so it\n"
+    "scopes itself: only docs/<n>/review.md is ever graded.",
 )
 
 tmp = Path(tempfile.mkdtemp())
+(tmp / "docs" / "2").mkdir(parents=True)
 
 
 def review(name, body):
-    p = tmp / name
+    # The validator only grades <root>/docs/<n>/review.md; each fixture
+    # overwrites the same path a real review lives at.
+    p = tmp / "docs" / "2" / "review.md"
     p.write_text(body)
     return {"tool_input": {"file_path": str(p)}}
 
@@ -269,20 +285,27 @@ TABLE_ONE_FAIL = TABLE_ALL_PASS.replace("| Soundness   | PASS    |",
                                         "| Soundness   | FAIL    |")
 
 case("accepts APPROVED with all PASS", "validate_review_format.py",
-     review("a.md", "Verdict: APPROVED\n" + TABLE_ALL_PASS), 0)
+     review("a.md", "Verdict: APPROVED\n" + TABLE_ALL_PASS), 0, cwd=tmp)
 case("accepts CHANGES REQUESTED with a FAIL", "validate_review_format.py",
-     review("b.md", "Verdict: CHANGES REQUESTED\n" + TABLE_ONE_FAIL), 0)
+     review("b.md", "Verdict: CHANGES REQUESTED\n" + TABLE_ONE_FAIL), 0, cwd=tmp)
 case("accepts QUESTIONS with no table", "validate_review_format.py",
-     review("c.md", "Verdict: QUESTIONS\n\n## Questions for human\n- Which store?\n"), 0)
+     review("c.md", "Verdict: QUESTIONS\n\n## Questions for human\n- Which store?\n"), 0, cwd=tmp)
 case("REFUSES a missing verdict line", "validate_review_format.py",
-     review("d.md", "## Review\nLooks good.\n"), 2)
+     review("d.md", "## Review\nLooks good.\n"), 2, cwd=tmp)
 case("REFUSES APPROVED that contradicts a FAIL", "validate_review_format.py",
-     review("e.md", "Verdict: APPROVED\n" + TABLE_ONE_FAIL), 2)
+     review("e.md", "Verdict: APPROVED\n" + TABLE_ONE_FAIL), 2, cwd=tmp)
 case("REFUSES CHANGES REQUESTED with all PASS", "validate_review_format.py",
-     review("f.md", "Verdict: CHANGES REQUESTED\n" + TABLE_ALL_PASS), 2)
+     review("f.md", "Verdict: CHANGES REQUESTED\n" + TABLE_ALL_PASS), 2, cwd=tmp)
 case("REFUSES a missing dimension", "validate_review_format.py",
      review("g.md", "Verdict: APPROVED\n" + TABLE_ALL_PASS.replace(
-         "| Over-reach  | PASS    |  |\n", "")), 2)
+         "| Over-reach  | PASS    |  |\n", "")), 2, cwd=tmp)
+
+# The settings.json wiring makes this hook fire on every Write everywhere;
+# a malformed file that is NOT docs/<n>/review.md must pass untouched.
+not_a_review = tmp / "docs" / "meeting-notes.md"
+not_a_review.write_text("## Review\nLooks good.\n")
+case("ignores malformed files OUTSIDE docs/<n>/review.md", "validate_review_format.py",
+     {"tool_input": {"file_path": str(not_a_review)}}, 0, cwd=tmp)
 
 shutil.rmtree(tmp, ignore_errors=True)
 
@@ -292,8 +315,10 @@ shutil.rmtree(tmp, ignore_errors=True)
 
 banner(
     "6. check_subagent_output.py",
-    "SubagentStop -- fires when a delegated AGENT finishes, not around a tool\n"
-    "call. Gets no file_path, so the check is deliberately coarse.\n"
+    "Stop hook in each agent's frontmatter (converted to SubagentStop at\n"
+    "runtime) -- fires when a delegated AGENT finishes, not around a tool\n"
+    "call. Each agent's wiring passes the filename it owns, so an agent that\n"
+    "wrote nothing is caught even in an already-populated folder.\n"
     "decision:'block' does NOT stop the agent: it KEEPS IT RUNNING and hands\n"
     "the reason to the SUBAGENT (not the orchestrator) as its next instruction.",
 )
@@ -308,12 +333,73 @@ case("keeps agent running when it wrote nothing (JSON on stdout)", "check_subage
 case("silent once the agent has written output", "check_subagent_output.py",
      {}, 0, cwd=tmp)
 
+# The per-agent form: the reviewer's wiring passes review.md. definition.md
+# already exists here, which satisfied the coarse check above — the expected
+# file must still be caught missing.
+case("catches a missing per-agent file in a POPULATED folder", "check_subagent_output.py",
+     {}, 0, cwd=tmp, args=("review.md",), expect_stdout_json=True)
+
+# ...but only nudges ONCE: with stop_hook_active the agent is already
+# continuing because of that block, and re-blocking would loop forever.
+case("lets the agent go on the second stop (stop_hook_active)", "check_subagent_output.py",
+     {"stop_hook_active": True}, 0, cwd=tmp, args=("review.md",))
+
+(tmp / "docs" / "2" / "review.md").write_text("Verdict: APPROVED")
+case("silent once the per-agent file exists", "check_subagent_output.py",
+     {}, 0, cwd=tmp, args=("review.md",))
+
 shutil.rmtree(tmp, ignore_errors=True)
 
 tmp = Path(tempfile.mkdtemp())
 (tmp / "docs").mkdir()
 case("stays out of the way with no cursor file", "check_subagent_output.py",
      {}, 0, cwd=tmp)
+# ...but says so in the audit log: a silent fail-open is indistinguishable
+# from a hook that never loaded, which is the ambiguity hook_error.md is about.
+audit = tmp / "docs" / "hook-audit.log"
+noted = audit.exists() and "check_subagent_output allow" in audit.read_text()
+results.append(noted)
+print(f"    {DIM}audit:{RESET} fail-open leaves an allow line   "
+      f"{GREEN + 'PASS' + RESET if noted else RED + 'FAIL' + RESET}")
+shutil.rmtree(tmp, ignore_errors=True)
+
+# ---------------------------------------------------------------------------
+# 6b. guard_docs_writes.py — the settings.json floor
+# ---------------------------------------------------------------------------
+
+banner(
+    "6b. guard_docs_writes.py",
+    "PreToolUse on Write|Edit, wired in .claude/settings.json -- so it runs in\n"
+    "EVERY session, whichever way it was launched. This is the floor under\n"
+    "the frontmatter guards after the day they silently failed to load\n"
+    "(hook_error.md): agent-independent rules only. Cross-writes between\n"
+    "agents are frontmatter's job; this layer cannot know WHO is writing.",
+)
+
+tmp = Path(tempfile.mkdtemp())
+(tmp / "docs" / "1").mkdir(parents=True)
+(tmp / "docs" / "2").mkdir(parents=True)
+(tmp / "docs" / ".current_iteration").write_text("2")
+
+case("passes ordinary files through untouched", "guard_docs_writes.py",
+     {"tool_input": {"file_path": "README.md"}}, 0, cwd=tmp)
+case("allows the current iteration's pipeline files", "guard_docs_writes.py",
+     {"tool_input": {"file_path": "docs/2/definition.md"}}, 0, cwd=tmp)
+case("REFUSES an OLDER iteration (B2, the violation that got through)", "guard_docs_writes.py",
+     {"tool_input": {"file_path": "docs/1/definition.md"}}, 2, cwd=tmp)
+case("allows clarification.md in docs/1 at any iteration", "guard_docs_writes.py",
+     {"tool_input": {"file_path": "docs/1/clarification.md"}}, 0, cwd=tmp)
+case("REFUSES the iteration cursor (repoint-and-rewrite attack)", "guard_docs_writes.py",
+     {"tool_input": {"file_path": "docs/.current_iteration"}}, 2, cwd=tmp)
+case("REFUSES the audit log (the judge's ground truth)", "guard_docs_writes.py",
+     {"tool_input": {"file_path": "docs/hook-audit.log"}}, 2, cwd=tmp)
+case("REFUSES a case-twiddled cursor (NTFS is case-insensitive)", "guard_docs_writes.py",
+     {"tool_input": {"file_path": "docs/.Current_Iteration"}}, 2, cwd=tmp)
+case("REFUSES an NTFS stream alias of the cursor", "guard_docs_writes.py",
+     {"tool_input": {"file_path": "docs/.current_iteration::$DATA"}}, 2, cwd=tmp)
+case("REFUSES stray files in an iteration folder", "guard_docs_writes.py",
+     {"tool_input": {"file_path": "docs/2/notes.md"}}, 2, cwd=tmp)
+
 shutil.rmtree(tmp, ignore_errors=True)
 
 # ---------------------------------------------------------------------------

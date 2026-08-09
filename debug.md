@@ -51,6 +51,15 @@ debug log (`claude --debug-file hookdebug.txt`) and look for the
 
 An earlier version of this file was a five-step diagnostic. Steps 4–5
 (verbose logging, settings.json probe) were never needed: the debug log
-from step 1–2 plus the trust check answered everything. No hooks were moved
-to `settings.json` — the frontmatter wiring works once the folder is
-trusted, on both platforms tested.
+from step 1–2 plus the trust check answered everything.
+
+**Superseded in part (2026-08-08).** "Root cause: workspace trust" above
+was the *mechanism*, proven in the container; on the laptop the folder was
+trusted and the failures correlated with VS Code extension-panel launches —
+the leading explanation is a lowercase-drive-letter trust-key lookup miss
+(GitHub issues #45195/#46586/#18122). And hooks *were* subsequently moved
+to `settings.json`, deliberately: an agent-independent floor
+(`scripts/guard_docs_writes.py` plus the two PostToolUse validators) that
+runs in every session, whichever way it was launched. The precise per-agent
+guards stay in frontmatter. Full account, updated experiment and the
+trust-key workaround: `hook_error.md` §8.

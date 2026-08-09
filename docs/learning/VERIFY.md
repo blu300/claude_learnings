@@ -20,7 +20,7 @@ There are three levels, cheapest first:
 python3 -m pytest tests/ -q
 ```
 
-Expected: `49 passed`.
+Expected: `76 passed`.
 
 If `pytest` is missing: `pip install pytest`.
 
@@ -36,7 +36,7 @@ its output is checked. They tell you nothing about whether the hooks are
 python3 scripts/verify_hooks.py
 ```
 
-Expected: `38/38 cases behaved as expected`, exit code 0.
+Expected: `53/53 cases behaved as expected`, exit code 0.
 
 This is the one to read rather than just run. For every hook it prints the
 payload going in, the exit code coming out, and the message an agent would
@@ -91,15 +91,30 @@ consistency* between two parts of a document — an agent cannot quietly approve
 a design it just scored as failing.
 
 **6. `check_subagent_output.py`** — a different event, a different channel.
-Fires on `SubagentStop`, so it gets no `file_path` and its check is
-deliberately coarse. It replies with `{"decision": "block", "reason": ...}` on
-stdout while exiting 0 — a richer channel than a status code.
+Fires on `SubagentStop` (declared as a `Stop` hook in each agent's
+frontmatter), so it gets no `file_path` — what it knows comes from the
+frontmatter arguments: each agent's wiring passes the filename that agent
+owns. Watch the `POPULATED folder` case: `definition.md` already exists, the
+coarse check is satisfied, and the missing `review.md` is still caught. It
+replies with `{"decision": "block", "reason": ...}` on stdout while exiting
+0 — a richer channel than a status code.
 
 `block` here does **not** stop the agent: at SubagentStop it prevents the agent
 *finishing*, so the agent keeps running and receives the `reason` as its next
 instruction. That means the reason must be addressed to the **subagent**, not
-to the orchestrator, which never sees it. Note the third case too: with no
-cursor file the hook stays silent rather than guessing.
+to the orchestrator, which never sees it. Note the no-cursor case too: the
+hook stays out of the way rather than guessing — but leaves an `allow` line
+in the audit log saying so, because a silent fail-open is indistinguishable
+from a hook that never loaded.
+
+**6b. `guard_docs_writes.py`** — the settings.json floor. After the day the
+agent-frontmatter hooks silently failed to load (`hook_error.md`), the
+agent-independent rules were duplicated into a guard wired in
+`.claude/settings.json`, which runs in every session. It cannot know *who* is
+writing — agent identity exists only in frontmatter — so cross-writes between
+agents remain frontmatter's job; but older-iteration overwrites, stray files,
+and Write/Edit access to the iteration cursor and the audit log itself are
+blocked in every session, whichever way it was launched.
 
 **7. `iteration.py next`** — the cap, no flag required.
 Five calls, four folders. The fifth exits 1 and creates nothing — the cap is
@@ -256,10 +271,13 @@ Two behaviours worth reading the files for:
 
 Be clear about the limits of the walkthrough above, because they are real:
 
-- **Skill-level hooks do not fire.** The `PreToolUse` and `SubagentStop` hooks
-  declared in `SKILL.md`'s frontmatter apply when the *skill* is running as the
+- **Skill-level hooks do not fire.** The `PreToolUse` hooks declared in
+  `SKILL.md`'s frontmatter apply when the *skill* is running as the
   orchestrator. Driving the steps by hand means those never trigger
   automatically — which is exactly why `verify_hooks.py` invokes them directly.
+  (The subagent-stop check is declared as a `Stop` hook in each agent's own
+  frontmatter — the documented location; a legacy `SubagentStop` block also
+  remains in `SKILL.md`, though no session has ever been observed running it.)
 - **No hook has been observed blocking a live agent mid-run.** In the recorded
   run no agent ever attempted a bad write, so every block shown came from
   feeding a script a payload. The scripts are proven; "a hook automatically

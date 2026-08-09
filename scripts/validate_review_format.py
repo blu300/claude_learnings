@@ -25,6 +25,15 @@ Rejects if:
 - Scoring table is missing or incomplete
 - Verdict contradicts scoring (APPROVED with FAILs, or CHANGES REQUESTED with
   all PASS)
+
+SCOPE
+-----
+Only <root>/docs/<n>/review.md is validated; any other path exits 0 silently.
+This script used to rely purely on its placement (the reviewer's frontmatter)
+for scoping and would grade whatever file it was fired on. Now that it is
+also wired project-wide in .claude/settings.json — the fallback layer for the
+sessions where agent-frontmatter hooks silently fail to load (hook_error.md)
+— it must decide for itself which writes are its business.
 """
 
 import json
@@ -32,6 +41,7 @@ import re
 import sys
 from pathlib import Path
 
+import docs_scope
 import hook_audit
 
 ALLOW = 0
@@ -91,6 +101,10 @@ def main() -> int:
     except (json.JSONDecodeError, KeyError, TypeError, ValueError):
         print("Blocked: could not read file path from tool call.", file=sys.stderr)
         return BLOCK
+
+    target = docs_scope.iteration_target(path, docs_scope.project_root())
+    if target is None or target[1] != "review.md":
+        return ALLOW  # not a pipeline review file — none of this hook's business
 
     try:
         content = Path(path).read_text(encoding="utf-8")

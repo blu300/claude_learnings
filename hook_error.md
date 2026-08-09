@@ -311,3 +311,200 @@ state of the system: B3b (the Bash heredoc bypass) fails by design — it is
 the documented, deliberately kept gap — and B1/B4/B5 may return "could not
 be provoked" if the specialist agents again refuse to misbehave on
 instruction, which is their prompts working, not the guards failing.
+
+---
+
+## 8. Resolution update — 2026-08-08, independent investigation
+
+Written after §1–7, from a Linux container on Claude Code 2.1.226, after a
+multi-agent review of this file, the repo, the public changelog and issue
+tracker. §1–7 are left untouched as the historical record; where this
+section contradicts them, this section is the later finding.
+
+### 8.1 The casing mechanism is publicly documented — and not fixed
+
+The surviving candidate 2 is not hypothetical. Three GitHub issues against
+`anthropics/claude-code` describe exactly the mechanism:
+
+- **#45195** — *VS Code: MCP servers not recognized due to project path
+  case difference* (reported April 2026, v2.1.96): the VS Code extension
+  passes a lowercase drive letter (`c:\...`) while `.claude.json` keys the
+  project `C:/...`; the case-sensitive project-key lookup silently misses.
+  **Closed as not planned.**
+  https://github.com/anthropics/claude-code/issues/45195
+- **#46586** — same mechanism, MCP configuration conflict. **Closed as
+  duplicate.** https://github.com/anthropics/claude-code/issues/46586
+- **#18122** — duplicate project entries created with different drive-letter
+  capitalization (reported January 2026, v2.1.7). **Closed as not
+  planned.** https://github.com/anthropics/claude-code/issues/18122
+
+A lookup keyed `c:/Users/...` against a single trusted entry keyed
+`C:/Users/...` misses without needing a second entry to exist — which is
+why theory 3's death (findstr showed exactly one uppercase trusted entry)
+never killed candidate 2. Caveat, for honesty: those issues document the
+casing miss for MCP/project-settings lookups, not the frontmatter-hook
+trust gate specifically; that the same miss produces the observed hook-skip
+signature is a strong inference, confirmed or refuted by the experiment in
+§8.4, not yet observed end-to-end on this laptop.
+
+### 8.2 The version candidate has no public support
+
+The changelog between the two builds contains nothing that would fix a
+trust-lookup miss: 2.1.218 *introduced* the trust gate ("Fixed agent
+frontmatter hooks running from untrusted folders" — enforcement, not a
+lookup fix), 2.1.222 is background-agent hook scope, 2.1.224 is long-path
+collision, 2.1.225 added a trust *prompt* to `claude agents` (UI, not
+lookup), 2.1.226 says only "Bug fixes and reliability improvements" — a
+possible hiding place, not evidence. Candidate 1 survives only inside that
+last line. Weighting after research: roughly 70% candidate 2, 15%
+candidate 1, 15% entangled (e.g. the panel bundling its own CLI, making
+"panel" and "old build" the same variable).
+
+### 8.3 The B7 hook was never alive anywhere — a separate, third fact
+
+The SubagentStop wiring in SKILL.md was **probably dead syntax in every
+session, working and failing alike**:
+
+- The sub-agents reference documents subagent stop hooks as `Stop` declared
+  in the AGENT's frontmatter, "converted to `SubagentStop` at runtime".
+  The skills reference does not enumerate supported events for skill
+  frontmatter; nothing documents `SubagentStop` there.
+- No session in this whole affair — laptop or container, failing or
+  working, trusted or not — ever produced a `check_subagent_output` audit
+  line.
+
+So "SubagentStop (declared in SKILL.md) also never fired" in §3 was not
+part of the incident: it was the constant background state, visible only
+because B7 happened to be probed. Neither surviving candidate needs to
+explain it. (Two script bugs compounded the silence: the script read
+`docs/.current_iteration` relative to the CWD rather than
+CLAUDE_PROJECT_DIR, and its fail-open paths wrote no audit line — so even a
+registered, executed run could have left zero lines.)
+
+Also corrected from §3: B7's *expected block* was unsatisfiable as coded in
+a populated folder — the check was `any(*.md)`, so docs/1's four existing
+files would have satisfied it. Zero lines (rather than allow lines) is what
+"never registered" predicts.
+
+### 8.4 What changed in the repo (2026-08-08, branch claude/hook-guard-failures-vncprf)
+
+1. **check_subagent_output.py rewired and upgraded.** Now declared as a
+   `Stop` hook in each agent's frontmatter (the documented location),
+   passing that agent's expected filename — so an agent that writes nothing
+   is caught even in a populated folder. Anchored to CLAUDE_PROJECT_DIR
+   like every guard; every fail-open path now writes an audit line. The
+   SKILL.md SubagentStop block is left in place until the replacement is
+   observed firing; its lines (no "checked:" detail) are distinguishable
+   from the new wiring's.
+2. **A settings.json floor.** `.claude/settings.json` now wires
+   `guard_docs_writes.py` (PreToolUse Write|Edit) plus second copies of
+   `validate_review_format.py` and `warn_estimates_in_backlog.py`
+   (PostToolUse Write) — hooks that run in EVERY session per the
+   sub-agents reference ("Tool events such as PreToolUse and PostToolUse
+   fire for the subagent's tool calls the same way they do in the main
+   conversation"). The floor enforces only agent-independent rules:
+   iteration scoping (B2 — the violation that actually went through
+   silently), docs/1-only files, no stray files in iteration folders, and
+   no Write/Edit of docs/.current_iteration, docs/hook-audit.log or the
+   preflight's rotated hook-audit.pre-test.log (an agent that can repoint
+   the cursor or rewrite the audit log defeats both the guards and the
+   judge). State-file and pipeline-file names are matched
+   case-insensitively and colon/stream path forms are refused — NTFS is
+   case-insensitive, and Path.resolve() canonicalizes case only for
+   components that already exist, so docs/.Current_Iteration written while
+   the real cursor is absent (the normal state between runs) would
+   otherwise slip past an exact-string check and BE the cursor. B1-style cross-writes still pass this layer
+   — agent identity exists only in frontmatter and cannot be recovered at
+   settings level. Honest caveat: the docs are silent on whether
+   settings.json hooks are trust-gated; no settings.json existed during
+   the failing sessions, so this layer's immunity to the panel condition
+   is documented-behavior-plus-hope until the §8.5 experiment includes it
+   (the preflight now checks for its audit line explicitly).
+3. **The two validators scope themselves.** Both PostToolUse hooks now act
+   only on `<root>/docs/<n>/review.md` / `backlog.md` — mandatory once
+   they run project-wide (ungated, every Write in every session would be
+   nagged; this file itself would eventually trip the estimates regex).
+4. **Preflight extended** (LLM as judge.md step 0): records
+   `claude --version` and the launch context in the evidence file — the
+   omission that made §7's question permanently unanswerable (§6.6, now
+   closed); creates the cursor so every hook class has something to check;
+   requires audit lines from BOTH PreToolUse layers and PostToolUse, and
+   names the missing class on failure; rotates the log aside instead of
+   deleting it.
+5. **Test hygiene.** Three test files ran hook scripts without pinning
+   CLAUDE_PROJECT_DIR; a plain `pytest tests/` appended ~16 junk lines to
+   the real docs/hook-audit.log via hook_audit's cwd fallback —
+   contaminating the exact file the judge treats as ground truth. All
+   tests now pin it. (Counts: 49 unit tests → 76; 38 harness cases → 53.)
+
+### 8.5 The decisive experiment, updated (run on the laptop, PowerShell)
+
+~5 minutes. Phase 0, baseline (PowerShell, project folder):
+
+```powershell
+claude --version
+& "$env:USERPROFILE\.local\bin\claude.exe" --version   # PATH and installed build may differ
+Copy-Item "$env:USERPROFILE\.claude.json" "$env:USERPROFILE\.claude.json.bak"
+$cfg = Get-Content "$env:USERPROFILE\.claude.json" -Raw | ConvertFrom-Json
+$cfg.projects.PSObject.Properties.Name | Where-Object { $_ -match '(?i)claude_learning' }
+```
+
+Record every project key verbatim (expect one, uppercase C). Then launch a
+session from the **VS Code extension panel proper** (not the integrated
+terminal — the 20:48 test already covered that) and run only the preflight
+(step 0 of the runner prompt), which now also records the panel session's
+own `claude --version`. Read docs/hook-audit.log from PowerShell afterwards
+— the preflight rotates it to docs/hook-audit.pre-test.log on success, so
+check both names. Outcomes:
+
+- **A. All preflight lines present, paths show `c:\`** — hooks fire even
+  with the lowercase path: the casing-miss mechanism is refuted on the
+  current build; historical attribution stays ambiguous; note it, close
+  the file, run the owed full test.
+- **A′. All present, paths show `C:\`** — the panel no longer passes a
+  lowercase path; condition gone by a different route; same practical
+  outcome, attribution stays ambiguous.
+- **B. guard_output_path / check_subagent_output lines missing (agent
+  frontmatter dead) while guard_docs_writes appears** — candidate 2
+  confirmed on current software, and the settings floor demonstrably held.
+  Apply the workaround below, re-run the preflight from the panel, and
+  file the bug against claude-code referencing #45195/#46586/#18122 —
+  emphasising that the casing miss silently disables ENFORCEMENT hooks, a
+  security-relevant escalation over the MCP symptom those issues describe.
+- **C. Everything missing including guard_docs_writes** — the panel
+  condition gates settings.json hooks too; the floor does not hold there;
+  all live-fire runs stay on PowerShell/integrated terminal until the bug
+  report resolves.
+
+Workaround for outcome B (mirror the trust entry under the lowercase key;
+the Phase 0 .bak covers round-trip damage):
+
+```powershell
+$p = "$env:USERPROFILE\.claude.json"
+$cfg = Get-Content $p -Raw | ConvertFrom-Json
+$upper = $cfg.projects.PSObject.Properties.Name |
+    Where-Object { $_ -cmatch '^C:' -and $_ -match '(?i)claude_learning' } |
+    Select-Object -First 1
+if (-not $upper) { throw "no uppercase project key found — stop here" }
+$lower = $upper.Substring(0,1).ToLower() + $upper.Substring(1)
+$cfg.projects | Add-Member -MemberType NoteProperty -Name $lower -Value $cfg.projects.$upper -Force
+$cfg | ConvertTo-Json -Depth 100 | Set-Content $p -Encoding UTF8
+claude --version   # confirm the config still parses
+```
+
+Keep the duplicate entry as a standing workaround and re-check it after CLI
+or extension updates (#18122 warns that settings changes under one spelling
+do not propagate to the other).
+
+### 8.6 Still open
+
+- The failing sessions' CLI build — permanently unrecorded (§6.6; the
+  preflight now records it every run).
+- Whether the panel spawns the PATH claude.exe or a bundled one — the
+  panel session's self-reported version in the experiment answers it.
+- Whether settings.json hooks sit behind the same trust gate — docs are
+  silent; outcome B vs C above answers it for this laptop.
+- The full live-fire run (Prompt 1 then Prompt 2) from a passing preflight
+  is still owed, with the §7 expectations unchanged: B3b fails by design,
+  and B1/B4/B5 may return "could not be provoked" if the agents refuse to
+  misbehave on instruction.

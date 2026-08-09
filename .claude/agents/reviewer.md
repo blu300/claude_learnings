@@ -16,6 +16,10 @@ hooks:
       hooks:
         - type: command
           command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/validate_review_format.py"'
+  Stop:
+    - hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/check_subagent_output.py" review.md'
 ---
 
 You review a design document. You never edit the design, and you never write

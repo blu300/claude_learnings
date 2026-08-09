@@ -23,6 +23,15 @@ and Claude never sees it. Warnings travel as JSON on stdout:
                                             result, so it can fix the file
 
 See https://code.claude.com/docs/en/hooks for both fields.
+
+SCOPE
+-----
+Only <root>/docs/<n>/backlog.md is scanned; any other path exits 0 silently.
+Scoping used to come purely from placement (the backlog-writer's frontmatter).
+Now that this hook is also wired project-wide in .claude/settings.json — the
+fallback layer for sessions where agent-frontmatter hooks silently fail to
+load (hook_error.md) — an ungated version would nag about "estimates" in any
+file in any session that happens to mention the word.
 """
 
 import json
@@ -30,6 +39,7 @@ import re
 import sys
 from pathlib import Path
 
+import docs_scope
 import hook_audit
 
 ESTIMATE_PATTERNS = [
@@ -44,6 +54,10 @@ def main() -> int:
         path = call["tool_input"]["file_path"]
     except (json.JSONDecodeError, KeyError, TypeError, ValueError):
         return 0
+
+    target = docs_scope.iteration_target(path, docs_scope.project_root())
+    if target is None or target[1] != "backlog.md":
+        return 0  # not a pipeline backlog — none of this hook's business
 
     try:
         content = Path(path).read_text(encoding="utf-8")

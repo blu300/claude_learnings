@@ -15,6 +15,10 @@ hooks:
       hooks:
         - type: command
           command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/warn_estimates_in_backlog.py"'
+  Stop:
+    - hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/check_subagent_output.py" backlog.md'
 ---
 
 You turn an approved design into a backlog. You do not re-open design

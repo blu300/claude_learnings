@@ -36,13 +36,21 @@ cross-checks the runner's quotes against it: a quoted block with no matching
 log line was never caused by a guard, and an empty log after a full run means
 the hooks never loaded at all.
 
-One scoping caveat to hold onto: the guards on the *coordinator* (B3, B5–B7's
-warn and stop hooks) are declared in SKILL.md's frontmatter and apply while
+One scoping caveat to hold onto: the coordinator's guards (B3's write guard,
+B6's paste warning) are declared in SKILL.md's frontmatter and apply while
 the skill is orchestrating. A test that provokes them outside that context
 may get silence that means "hook not in scope here", not "guard broken". The
 runner is told to record *how* each violation was attempted so the judge can
-tell those apart. The per-agent guards (B1, B2, B4) live in the agents' own
-frontmatter and apply whenever those agents run.
+tell those apart. The per-agent guards (B1, B2, B4, B5, B7) live in the
+agents' own frontmatter and apply whenever those agents run. A third layer
+exists since the hook-loading failure documented in `hook_error.md`: agent-
+independent rules are duplicated in `.claude/settings.json`
+(`guard_docs_writes.py` plus the two PostToolUse validators), which fire in
+every session — so some violations now produce two audit lines, one per
+layer, and B2 may be refused by either `guard_output_path` (frontmatter) or
+`guard_docs_writes` (settings floor). Duplicates are expected there, not
+fabrication — and a single line where two layers should have fired is itself
+evidence that one layer is dead.
 
 ---
 
@@ -106,17 +114,36 @@ happened. A test that reports success it cannot evidence is worse than no test.
 === SETUP ===
 
 0. PREFLIGHT — prove the hooks can load before spending anything.
-   Delegate one legitimate task to the `reviewer` agent: read
-   docs/1/definition.md and docs/1/brief-snapshot.md, write a normal review
-   to docs/1/review.md. Then check:
-       grep guard_output_path docs/hook-audit.log
-   A line appears -> hooks load; restore the file (git checkout -- docs/1/review.md,
-   rm -f docs/hook-audit.log) and continue.
-   NO line -> STOP. Do not run the test. Agent-frontmatter hooks are being
-   skipped — almost always workspace trust (the skip error is visible only
-   in a debug log: rerun with `claude --debug-file hookdebug.txt` and look
-   for "Skipping frontmatter hooks"). See debug.md. A test run in this
-   state produces only false failures.
+
+   First record, in the evidence file: the output of `claude --version` run
+   via Bash INSIDE this session, and how this session was launched (VS Code
+   extension panel, VS Code integrated terminal, or a standalone terminal —
+   plus the TERM_PROGRAM environment variable if set). The one question the
+   last failure left permanently unanswerable was the failing session's CLI
+   build; never lose it again.
+
+   Then create the iteration cursor so every hook class has something to
+   check (`echo 1 > docs/.current_iteration`), and delegate one legitimate
+   task to the `reviewer` agent: read docs/1/definition.md and
+   docs/1/brief-snapshot.md, write a normal review to docs/1/review.md.
+   Then check the audit log for FOUR lines:
+       grep guard_output_path docs/hook-audit.log      (agent frontmatter, PreToolUse)
+       grep guard_docs_writes docs/hook-audit.log      (settings.json layer)
+       grep validate_review_format docs/hook-audit.log (PostToolUse)
+       grep check_subagent_output docs/hook-audit.log  (agent Stop hook — expect
+                                                        "checked: review.md" in it)
+   The first three are HARD requirements: any missing -> STOP, do not run
+   the test, and record WHICH line is missing — that names the dead hook
+   class (frontmatter vs settings). The fourth is warn-only until it has
+   been observed working once; record its presence or absence either way.
+   All present -> restore the state (git checkout -- docs/1/review.md,
+   rm -f docs/.current_iteration,
+   mv docs/hook-audit.log docs/hook-audit.pre-test.log) and continue. Move
+   the log aside rather than deleting it — it is the preflight's evidence.
+   On a STOP: the skip error is visible only in a debug log (rerun with
+   `claude --debug-file hookdebug.txt` and look for "Skipping frontmatter
+   hooks"). See debug.md and hook_error.md. A test run in this state
+   produces only false failures.
 
 1. Confirm you are in the repository root: `README.md`, `scripts/`, `tests/`
    and `.claude/` should all be present. If not, stop and say so.
@@ -194,9 +221,12 @@ Do these one at a time. Do not batch them.
   B2. guard_output_path.py — older iteration.
       Set the cursor forward: `echo "2" > docs/.current_iteration` (create
       docs/2 first if needed — normally iteration.py writes this file; you are
-      manipulating it directly because this is a test). Delegate to the
-      `designer` agent and instruct it to write to `docs/1/definition.md`.
-      Expected: refused for being an earlier iteration.
+      manipulating it directly via Bash because this is a test; the Write
+      tool would be refused). Delegate to the `designer` agent and instruct
+      it to write to `docs/1/definition.md`. Expected: refused for being an
+      earlier iteration — by guard_output_path (agent frontmatter) or
+      guard_docs_writes (the settings.json floor), or both. Record which
+      guard's message you saw; the audit log names the script per line.
 
   B3. guard_orchestrator_write.py — the blinding rule.
       While the design-cycle skill is still active, try to write
@@ -227,11 +257,16 @@ Do these one at a time. Do not batch them.
       proceeds.
 
   B7. check_subagent_output.py — an agent that writes nothing.
-      Point `docs/.current_iteration` at an empty folder, then delegate to any
-      agent with an instruction that requires no file to be written (e.g.
-      "read README.md and reply with its first line, write nothing"). Expected:
-      something reacts when the agent finishes empty-handed. Record exactly
-      what, including whether the agent was told to continue.
+      Each agent's frontmatter Stop hook now passes the filename that agent
+      owns, so the check works even in a populated folder: delegate to the
+      `reviewer` with an instruction that requires no file to be written
+      (e.g. "read README.md and reply with its first line, write nothing")
+      while docs/.current_iteration points at a folder with no review.md.
+      Expected: when the agent tries to finish, it is kept running with an
+      instruction naming the missing review.md (the block goes to the
+      SUBAGENT, not to you — you may only see the agent correcting itself
+      or reporting why it cannot). Record exactly what you observed and the
+      check_subagent_output lines in the audit log.
 
 (There is no cap test here on purpose: the iteration cap is script behaviour,
 already proven by the unit tests and verify_hooks.py — live-fire time goes to
@@ -250,7 +285,7 @@ what only a live session can show.)
 === TEARDOWN ===
 
 Restore the repository:
-    rm -rf docs/1 docs/2 docs/3 docs/4 docs/.current_iteration docs/hook-audit.log test-brief.md
+    rm -rf docs/1 docs/2 docs/3 docs/4 docs/.current_iteration docs/hook-audit.log docs/hook-audit.pre-test.log test-brief.md
     mv /tmp/pipeline-test-backup/* docs/ 2>/dev/null
     git checkout -- docs/
     git status --short
@@ -294,11 +329,24 @@ fails at once.
 Absence of evidence is failure. Silence from a guard is failure, because a
 guard that was never loaded is silent in exactly the same way as one that was
 never provoked. One exception deserves care: the coordinator's hooks (the
-orchestrator write guard, the paste warning, the subagent-stop check) are
-declared in SKILL.md and apply while the skill is orchestrating. If the
-runner recorded that it provoked one of these OUTSIDE the running skill,
-silence there is "test out of scope", not "guard broken" — say which, and
-rule the claim NOT PROVEN rather than inventing a pass or a fail.
+orchestrator write guard and the paste warning) are declared in SKILL.md and
+apply while the skill is orchestrating. If the runner recorded that it
+provoked one of these OUTSIDE the running skill, silence there is "test out
+of scope", not "guard broken" — say which, and rule the claim NOT PROVEN
+rather than inventing a pass or a fail.
+
+Two mechanical notes about the audit log before you cross-check:
+  - The rules run in LAYERS: agent frontmatter hooks plus a project-wide
+    .claude/settings.json layer (guard_docs_writes, and second copies of
+    validate_review_format and warn_estimates_in_backlog). One event can
+    therefore legitimately produce two audit lines, and a B2 refusal may be
+    logged by guard_docs_writes instead of guard_output_path. Duplicate
+    lines are NOT fabrication. Conversely, where the evidence shows both
+    layers loaded (the preflight lists which), a single line where two are
+    expected is a sign one layer died mid-run — say so.
+  - check_subagent_output lines that contain "checked: <filename>" come
+    from the per-agent frontmatter wiring; lines without it come from the
+    legacy coarse wiring. The preflight records which classes loaded.
 
 RULE ON EACH OF THESE
 

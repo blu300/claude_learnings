@@ -11,6 +11,10 @@ hooks:
       hooks:
         - type: command
           command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/guard_output_path.py" clarification.md'
+  Stop:
+    - hooks:
+        - type: command
+          command: 'python3 "${CLAUDE_PROJECT_DIR}/scripts/check_subagent_output.py" clarification.md'
 ---
 
 You interrogate a brief. You do not design anything, and you do not answer
