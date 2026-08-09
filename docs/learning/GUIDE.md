@@ -119,8 +119,12 @@ with the prompt surfacing in the main session
 ([tools reference](https://code.claude.com/docs/en/tools-reference)). These
 four cannot ask because that tool is not in their `tools:` list — the same
 restrict-by-capability move as withholding `Bash`. So when the clarifier has
-questions, it writes them to a file, and the orchestrator reads them out and
-relays the answers back. Every human interaction is a relay, and every answer
+questions, it writes them to a file, and the orchestrator relays them — and
+notice the shape of the relay: the very tool withheld from the agents is the
+one the orchestrator uses on the human-facing end, presenting each blocking
+question as a panel of clickable choices (`AskUserQuestion`), with the
+useful-but-skippable ones as a plain list. The agents' side of the relay
+stays files; only the last hop to the human gets a UI. Every answer still
 lands in one durable file instead of a transcript.
 
 This is also why the orchestrator is told to **pass file paths, never file

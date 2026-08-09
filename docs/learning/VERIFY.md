@@ -314,7 +314,9 @@ Be clear about the limits of the walkthrough above, because they are real:
   `QUESTIONS` round, the in-script iteration cap, the script-owned cursor and
   the audit log have all been proven at the script layer but not yet observed
   in a live pipeline run — the specimen under `docs/example-run/` never hit a
-  `QUESTIONS` verdict at all. The live-fire test in `LLM as judge.md` is how
+  `QUESTIONS` verdict at all. It also predates the interactive question flow:
+  its clarification file shows the old all-questions-in-one-reply style, where
+  a current run puts blocking questions to the human as clickable panels. The live-fire test in `LLM as judge.md` is how
   to close that gap.
 
 ---
