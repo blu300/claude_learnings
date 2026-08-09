@@ -73,6 +73,11 @@ In order. Each step assumes the ones before it.
    [`LLM as judge.md`](LLM%20as%20judge.md). It takes a real session, real
    money, and ~30 minutes, and it tests the one thing nothing above can —
    whether the harness actually runs these guards.
+8. **[`docs/learning/CASE-STUDY.md`](docs/learning/CASE-STUDY.md)** — read
+   this last: the day the capstone was run for real and five of seven
+   guards silently never loaded. What it looked like, why it was invisible,
+   the three root causes, and the six lessons that reshaped this repo.
+   (The unabridged forensic record is [`hook_error.md`](hook_error.md).)
 
 `docs/superpowers/` holds the original spec and implementation plan — the
 historical record, superseded in places by later hardening.
