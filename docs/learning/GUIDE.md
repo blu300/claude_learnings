@@ -607,6 +607,10 @@ session being tested. The live-fire test (`LLM as judge.md`) cross-checks its
 evidence against this file. Logging failures are swallowed: the record must
 never be the thing that breaks a guard.
 
+The full anatomy — why there is deliberately no logger *process*, every
+line of the module explained, the file's lifecycle and what protects it
+from the agents it records — is [audit.md](audit.md).
+
 ---
 
 ## 6. State: how information survives between agents

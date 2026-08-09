@@ -421,6 +421,9 @@ disposal.**
   (C), UserPromptSubmit (D), SessionStart and the recorder events (E).
   Each answers the same three questions: what is this event, how is it
   wired here, and what do the decisive lines actually do.
+- audit.md — how the record all of those hooks write actually gets
+  written: no logger process, one shared 49-line module, every line of it
+  explained.
 
 ---
 

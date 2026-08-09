@@ -200,6 +200,10 @@ Because some rules run in two layers (agent frontmatter *and*
 `.claude/settings.json`), one action can legitimately produce two lines.
 Duplicates are normal, not a bug.
 
+How the log actually gets written — no logger process, one shared
+function, every line of its code explained — is its own short read:
+[`docs/learning/audit.md`](docs/learning/audit.md).
+
 ---
 
 ## 5. The live-fire test
