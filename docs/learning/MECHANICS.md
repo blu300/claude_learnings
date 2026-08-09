@@ -232,8 +232,15 @@ Python — word/heading/question counts for a brief. Nothing in the file
 makes it "a tool"; **being a tool is a property of the wiring, not the
 script**. And the contrast completes the lesson: the designer's `tools:`
 has no `Bash` at all, so the same script, sitting in the same repo, simply
-does not exist for it. Capability granted to one, absent for another,
-allowlist enforced in between — try it by asking each agent to run it.
+does not exist for it.
+
+To see it working, don't ask the agents directly — an agent is a *role*,
+not a command-runner, and the clarifier will dutifully do its whole
+read-the-brief-and-project routine around any errand you hand it. Instead:
+`verify_hooks.py` section 2b shows the allow and the refusals in your
+terminal in seconds, and any real `/design-cycle` run leaves a
+`guard_agent_shell allow` line in the audit log where the clarifier ran
+its one command as part of the job.
 
 (Honest limit, stated in the guard's docstring too: a command-prefix
 allowlist stops drift, not a determined adversary — it is a leash, not a
