@@ -505,6 +505,20 @@ Option 1 if stewards must compose readership per table and combinations are unpr
 
 ---
 
+## Auditability (both options)
+
+`SHOW GRANTS` won't show it. It reports only real grants, so every table in the catalog shows the same broad `SELECT`, inherited. The tag-based restriction and the policy are invisible there, and in the Catalog Explorer permissions tab.
+
+`SHOW EFFECTIVE POLICIES ON TABLE x` tells you the policy applies, not which groups it admits. `DESCRIBE POLICY` shows the `EXCEPT` list, which is the only place the exempt identities appear.
+
+"Which groups can read which table" has to be built from the system tables: `information_schema.table_tags` (direct tags only), unioned with `schema_tags` and `catalog_tags` for inherited ones, joined to the lookup table (`slot_groups` or `access_set_groups`). Wrap that in a view in `gov.policy`; a second view listing tables with no match is the "locked tables" report. Append the `EXCEPT` principals to every row or the view under-counts.
+
+Group → people is not in `information_schema`; it comes from the account console or SCIM.
+
+Not checked: whether `system.access.audit` records `SET TAG` / `UNSET TAG`, i.e. whether "who opened this table, and when" is recoverable. `table_tags` has no history. If the audit log doesn't cover it, snapshot the view on a schedule.
+
+---
+
 ## Other options
 
 Each option, what it costs, and the single reason it lost.
